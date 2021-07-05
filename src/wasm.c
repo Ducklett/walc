@@ -1,3 +1,6 @@
+/*
+Lighweight C API for generating wasm bytecode
+*/
 #include "sti.h"
 
 u8 wasmMagic[] = {0x00, 0x61, 0x73, 0x6D};

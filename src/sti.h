@@ -1,3 +1,8 @@
+/********************************************
+STI: The standard interface library
+
+Provides some essentials to make working with C less of a pain
+*********************************************/
 #ifndef STI_H
 #define STI_H
 
@@ -51,6 +56,12 @@ bool strEqual(Str a, Str b)
 	return true;
 }
 
+void strFree(Str *b)
+{
+	free(b->buf);
+	(*b) = (Str){0};
+}
+
 typedef struct {
 	u8 *buf;
 	size_t len;
@@ -69,6 +80,12 @@ bool bufEqual(Buf a, Buf b)
 		}
 	}
 	return true;
+}
+
+void bufFree(Buf *b)
+{
+	free(b->buf);
+	(*b) = (Buf){0};
 }
 
 typedef struct {
