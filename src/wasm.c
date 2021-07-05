@@ -106,73 +106,67 @@ wasmModuleAddFunction(Wasm *module, Str name, Buf args, Buf rets, Buf locals, Bu
 	};
 }
 
-static inline void wasmPushBytes(Buf *buf, const Buf bytesToPush)
-{
-	memcpy(buf->buf + buf->len, bytesToPush.buf, bytesToPush.len);
-	buf->len += bytesToPush.len;
-}
-
-static inline void wasmPushByte(Buf *buf, const u8 byte) { buf->buf[buf->len++] = byte; }
-static inline u8 *wasmReserveByte(Buf *buf) { return buf->buf + buf->len++; }
+static inline u8 *wasmReserveByte(DynamicBuf *buf) { return buf->buf + buf->len++; }
 
 Buf wasmModuleCompile(Wasm module)
 {
-	Buf bytecode = {malloc(0xFFFF), 0};
-	wasmPushBytes(&bytecode, BUF(wasmMagic));
-	wasmPushBytes(&bytecode, BUF(wasmModule));
+	DynamicBuf bytecode = dynamicBufCreateWithCapacity(0xFFFF);
+	dynamicBufAppend(&bytecode, BUF(wasmMagic));
+	dynamicBufAppend(&bytecode, BUF(wasmModule));
 
 	if (module.headerCount) {
-		wasmPushByte(&bytecode, 0x01);
+		dynamicBufPush(&bytecode, 0x01);
+		// TODO: encode this as LEB128 u32
 		u8 *lenAddr = wasmReserveByte(&bytecode);
 		int headerstart = bytecode.len;
-		wasmPushByte(&bytecode, module.headerCount);
+		dynamicBufPush(&bytecode, module.headerCount);
 		for (int i = 0; i < module.headerCount; i++) {
 			WasmHeader header = module.headers[i];
 
-			wasmPushByte(&bytecode, 0x60);
-			wasmPushByte(&bytecode, header.paramCount);
+			dynamicBufPush(&bytecode, 0x60);
+			dynamicBufPush(&bytecode, header.paramCount);
 			for (int j = 0; j < header.paramCount; j++) {
-				wasmPushByte(&bytecode, header.params[j]);
+				dynamicBufPush(&bytecode, header.params[j]);
 			}
 
-			wasmPushByte(&bytecode, header.returnCount);
+			dynamicBufPush(&bytecode, header.returnCount);
 			for (int j = 0; j < header.returnCount; j++) {
-				wasmPushByte(&bytecode, header.returns[j]);
+				dynamicBufPush(&bytecode, header.returns[j]);
 			}
 		}
 		*lenAddr = bytecode.len - headerstart;
 	}
 
 	if (module.bodyCount) {
-		wasmPushByte(&bytecode, 0x03);
-		wasmPushByte(&bytecode, module.bodyCount + 1);
-		wasmPushByte(&bytecode, module.bodyCount);
+		dynamicBufPush(&bytecode, 0x03);
+		dynamicBufPush(&bytecode, module.bodyCount + 1);
+		dynamicBufPush(&bytecode, module.bodyCount);
 
 		for (int i = 0; i < module.bodyCount; i++) {
-			wasmPushByte(&bytecode, module.bodies[i].headerIndex);
+			dynamicBufPush(&bytecode, module.bodies[i].headerIndex);
 		}
 	}
 
 	if (module.hasMemory) {
-		wasmPushByte(&bytecode, 0x05);
-		wasmPushByte(&bytecode, 0x04);
-		wasmPushByte(&bytecode, 0x01);
-		wasmPushByte(&bytecode, 0x01);
-		wasmPushByte(&bytecode, module.memory.pages);
-		wasmPushByte(&bytecode, module.memory.maxPages);
+		dynamicBufPush(&bytecode, 0x05);
+		dynamicBufPush(&bytecode, 0x04);
+		dynamicBufPush(&bytecode, 0x01);
+		dynamicBufPush(&bytecode, 0x01);
+		dynamicBufPush(&bytecode, module.memory.pages);
+		dynamicBufPush(&bytecode, module.memory.maxPages);
 	}
 
 	if (module.hasExports) {
-		wasmPushByte(&bytecode, 0x07);
+		dynamicBufPush(&bytecode, 0x07);
 		u8 *lenAddr = wasmReserveByte(&bytecode);
 		int exportStart = bytecode.len;
 		u8 *countAddr = wasmReserveByte(&bytecode);
 
 		if (module.hasMemory) {
-			wasmPushByte(&bytecode, module.memory.name.len);
-			wasmPushBytes(&bytecode, STRTOBUF(module.memory.name));
-			wasmPushByte(&bytecode, 0x02);
-			wasmPushByte(&bytecode, 0x00);
+			dynamicBufPush(&bytecode, module.memory.name.len);
+			dynamicBufAppend(&bytecode, STRTOBUF(module.memory.name));
+			dynamicBufPush(&bytecode, 0x02);
+			dynamicBufPush(&bytecode, 0x00);
 			(*countAddr)++;
 		}
 
@@ -180,10 +174,10 @@ Buf wasmModuleCompile(Wasm module)
 			WasmFunc body = module.bodies[i];
 			if (body.name.len == 0) continue;
 
-			wasmPushByte(&bytecode, body.name.len);
-			wasmPushBytes(&bytecode, STRTOBUF(body.name));
-			wasmPushByte(&bytecode, 0x00);
-			wasmPushByte(&bytecode, body.id);
+			dynamicBufPush(&bytecode, body.name.len);
+			dynamicBufAppend(&bytecode, STRTOBUF(body.name));
+			dynamicBufPush(&bytecode, 0x00);
+			dynamicBufPush(&bytecode, body.id);
 			(*countAddr)++;
 		}
 
@@ -191,20 +185,20 @@ Buf wasmModuleCompile(Wasm module)
 	}
 
 	if (module.bodyCount) {
-		wasmPushByte(&bytecode, 0x0A);
+		dynamicBufPush(&bytecode, 0x0A);
 		u8 *lenAddr = wasmReserveByte(&bytecode);
 		int bodiesStart = bytecode.len;
-		wasmPushByte(&bytecode, module.bodyCount);
+		dynamicBufPush(&bytecode, module.bodyCount);
 		for (int i = 0; i < module.bodyCount; i++) {
 			WasmFunc body = module.bodies[i];
 			int bodyLen = 1 + /*locals*/ 1 + body.opcodesCount;
-			wasmPushByte(&bytecode, bodyLen);
-			wasmPushByte(&bytecode, 0 /*locals*/);
-			wasmPushBytes(&bytecode, (Buf){body.opcodes, body.opcodesCount});
-			wasmPushByte(&bytecode, 0x0B);
+			dynamicBufPush(&bytecode, bodyLen);
+			dynamicBufPush(&bytecode, 0 /*locals*/);
+			dynamicBufAppend(&bytecode, (Buf){body.opcodes, body.opcodesCount});
+			dynamicBufPush(&bytecode, 0x0B);
 		}
 		*lenAddr = bytecode.len - bodiesStart;
 	}
 
-	return bytecode;
+	return dynamicBufToBuf(bytecode);
 }
