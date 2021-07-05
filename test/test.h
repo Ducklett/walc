@@ -3,6 +3,13 @@
 
 #define PANIC_SOFT
 
+// for readability
+
+#define NOT		 !
+#define NOTEQUAL !=
+#define OR		 ||
+#define AND		 &&
+
 #include "../src/sti.h"
 
 static int test_pass;

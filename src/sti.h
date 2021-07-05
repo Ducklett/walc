@@ -63,7 +63,6 @@ bool bufEqual(Buf a, Buf b)
 	if (a.len != b.len) return false;
 	for (int i = 0; i < a.len; i++) {
 		if (a.buf[i] != b.buf[i]) {
-			printf("unmatched %d [%2X:%2X]\n", i, a.buf[i], b.buf[i]);
 			return false;
 		}
 	}

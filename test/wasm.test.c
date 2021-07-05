@@ -4,7 +4,6 @@
 
 #include "../src/wasm.c"
 #include "test.h"
-#include <string.h>
 
 void test_wasm_empty_module()
 {
