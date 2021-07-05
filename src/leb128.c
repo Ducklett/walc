@@ -6,7 +6,47 @@
 
 typedef uint8_t u8;
 
-int leb128Decode(u8 *bytes)
+uint32_t leb128DecodeU(u8 *bytes)
+{
+	uint32_t result = 0;
+	int shift = 0;
+	int i = 0;
+	while (true) {
+		u8 byte = bytes[i++];
+		result |= (byte & 0x7F) << shift;
+		if ((byte & 0x80) == 0) {
+			break;
+		}
+		shift += 7;
+	}
+	return result;
+}
+
+u8 *leb128EncodeU(uint32_t number, int *byteCount)
+{
+	*byteCount = 0;
+	const int maxBytes = 8;
+	u8 *bytes = malloc(maxBytes);
+
+	int iterations = 0;
+	do {
+		u8 byte = number & 0x7F;
+		number >>= 7;
+		if (number != 0) {
+			/* more bytes to come */
+			byte |= 0x80;
+		}
+
+		bytes[(*byteCount)++] = byte;
+		iterations++;
+		if (iterations > 8) break;
+
+	} while (number != 0);
+
+	return bytes;
+}
+
+int leb128DecodeS(u8 *bytes)
 {
 	int value = 0;
 	int shift = 0;
@@ -27,7 +67,7 @@ int leb128Decode(u8 *bytes)
 	}
 }
 
-u8 *leb128Encode(int number, int *byteCount)
+u8 *leb128EncodeS(int number, int *byteCount)
 {
 	const int maxBytes = 8;
 	u8 *bytes = malloc(maxBytes);
