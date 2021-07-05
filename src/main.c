@@ -21,22 +21,46 @@ typedef struct {
 } WasmHeader;
 
 typedef struct {
+	int id;
 	int headerIndex;
-	u8 *opcodes;
-	int len;
-} WasmBody;
+	Str name;
+	WasmType *locals;
+	int localsCount;
+	WasmOp *opcodes;
+	int opcodesCount;
+} WasmFunc;
 
 typedef struct {
+	int id;
+	int headerIndex;
+	Str *path;
+	int pathCount;
+} WasmImport;
+
+typedef struct {
+	Str name;
+	int pages;
+	int maxPages;
+} WasmMemory;
+
+typedef struct {
+	bool hasMemory;
+	bool hasExports;
+	WasmMemory memory;
 	WasmHeader *headers;
 	int headerCount;
-	WasmBody *bodies;
+	WasmFunc *bodies;
 	int bodyCount;
+	WasmImport *imports;
+	int importCount;
+
+	int funcCount;
 } Wasm;
 
 Wasm wasmModuleCreate()
 {
 	Wasm module = {
-		.bodies = malloc(sizeof(WasmBody *) * 0xFF),
+		.bodies = malloc(sizeof(WasmFunc *) * 0xFF),
 		.headers = malloc(sizeof(WasmHeader *) * 0xFF),
 		0,
 	};
@@ -44,18 +68,40 @@ Wasm wasmModuleCreate()
 	return module;
 }
 
+int wasmModuleGenerateFunctionId(Wasm *module) { return module->funcCount++; }
+
+void wasmModuleAddMemory(Wasm *module, Str name, int pages, int maxPages)
+{
+	if (module->hasMemory) PANIC("Memory should only be set once.");
+	module->hasMemory = true;
+	if (name.len != 0) module->hasExports = true;
+	module->memory = (WasmMemory){
+		.name = name,
+		.pages = pages,
+		.maxPages = maxPages,
+	};
+}
+
 // adds a new function to the module
 // the provided buffers shouldn't be freed until you are done with the {Wasm} object
-wasmModuleAddFunction(Wasm *module, Buf args, Buf rets, Buf opcodes)
+wasmModuleAddFunction(Wasm *module, Str name, Buf args, Buf rets, Buf locals, Buf opcodes)
 {
 	// TODO: compare headers
 	// TODO: use some kind of bump/arena allocator
 
+	if (name.len != 0) module->hasExports = true;
+
 	module->headers[module->headerCount++] = (WasmHeader){args.len, args.buf, rets.len, rets.buf};
-	module->bodies[module->bodyCount++] = (WasmBody){
+	int id = module->bodyCount;
+	module->bodyCount++;
+	module->bodies[id] = (WasmFunc){
+		.id = id,
 		.headerIndex = module->headerCount - 1,
+		.name = name,
+		.locals = locals.buf,
+		.localsCount = locals.len,
 		.opcodes = opcodes.buf,
-		.len = opcodes.len,
+		.opcodesCount = opcodes.len,
 	};
 }
 
@@ -106,8 +152,42 @@ Buf wasmModuleCompile(Wasm module)
 		}
 	}
 
-	// memory {}
-	// exports {}
+	if (module.hasMemory) {
+		wasmPushByte(&bytecode, 0x05);
+		wasmPushByte(&bytecode, 0x04);
+		wasmPushByte(&bytecode, 0x01);
+		wasmPushByte(&bytecode, 0x01);
+		wasmPushByte(&bytecode, module.memory.pages);
+		wasmPushByte(&bytecode, module.memory.maxPages);
+	}
+
+	if (module.hasExports) {
+		wasmPushByte(&bytecode, 0x07);
+		u8 *lenAddr = wasmReserveByte(&bytecode);
+		int exportStart = bytecode.len;
+		u8 *countAddr = wasmReserveByte(&bytecode);
+
+		if (module.hasMemory) {
+			wasmPushByte(&bytecode, module.memory.name.len);
+			wasmPushBytes(&bytecode, STRTOBUF(module.memory.name));
+			wasmPushByte(&bytecode, 0x02);
+			wasmPushByte(&bytecode, 0x00);
+			(*countAddr)++;
+		}
+
+		for (int i = 0; i < module.bodyCount; i++) {
+			WasmFunc body = module.bodies[i];
+			if (body.name.len == 0) continue;
+
+			wasmPushByte(&bytecode, body.name.len);
+			wasmPushBytes(&bytecode, STRTOBUF(body.name));
+			wasmPushByte(&bytecode, 0x00);
+			wasmPushByte(&bytecode, body.id);
+			(*countAddr)++;
+		}
+
+		*lenAddr = bytecode.len - exportStart;
+	}
 
 	if (module.bodyCount) {
 		wasmPushByte(&bytecode, 0x0A);
@@ -115,11 +195,11 @@ Buf wasmModuleCompile(Wasm module)
 		int bodiesStart = bytecode.len;
 		wasmPushByte(&bytecode, module.bodyCount);
 		for (int i = 0; i < module.bodyCount; i++) {
-			WasmBody body = module.bodies[i];
-			int bodyLen = 1 + /*locals*/ 1 + body.len;
+			WasmFunc body = module.bodies[i];
+			int bodyLen = 1 + /*locals*/ 1 + body.opcodesCount;
 			wasmPushByte(&bytecode, bodyLen);
 			wasmPushByte(&bytecode, 0 /*locals*/);
-			wasmPushBytes(&bytecode, (Buf){body.opcodes, body.len});
+			wasmPushBytes(&bytecode, (Buf){body.opcodes, body.opcodesCount});
 			wasmPushByte(&bytecode, 0x0B);
 		}
 		*lenAddr = bytecode.len - bodiesStart;
@@ -132,9 +212,11 @@ int main(int argc, char **argv)
 {
 	Wasm source = wasmModuleCreate();
 
+	wasmModuleAddMemory(&source, STR("mem"), 1, 2);
+
 	WasmType returns[] = {WasmType_i32};
-	u8 opcodes[] = {WasmOp_I32Const, 10, WasmOp_I32Const, 20, WasmOp_I32Add, WasmOp_I32Const, 2, WasmOp_I32Add};
-	wasmModuleAddFunction(&source, BUFEMPTY, BUF(returns), BUF(opcodes));
+	u8 opcodes[] = {WasmOp_I32Const, 10, WasmOp_I32Const, 20, WasmOp_I32Add};
+	wasmModuleAddFunction(&source, STR("foo"), BUFEMPTY, BUF(returns), BUFEMPTY, BUF(opcodes));
 
 	Buf wasm = wasmModuleCompile(source);
 

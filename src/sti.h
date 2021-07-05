@@ -37,7 +37,8 @@ typedef struct {
 	char *buf;
 	size_t len;
 } Str;
-#define STR(x) ((Str){x, sizeof(x) - 1})
+#define STR(x)	 ((Str){x, sizeof(x) - 1})
+#define STREMPTY ((Str){0, 0})
 
 typedef struct {
 	u8 *buf;
@@ -45,6 +46,8 @@ typedef struct {
 } Buf;
 #define BUF(x)	 ((Buf){x, sizeof(x)})
 #define BUFEMPTY ((Buf){0})
+
+#define STRTOBUF(x) ((Buf){(u8 *)(x.buf), (x.len)})
 
 // prints the provided message and then kills the program
 // always returns {false} so it can be used in binary expressions: {doThis() || panic("Failed")}
