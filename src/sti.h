@@ -40,6 +40,15 @@ typedef struct {
 #define STR(x)	 ((Str){x, sizeof(x) - 1})
 #define STREMPTY ((Str){0, 0})
 
+bool strEqual(Str a, Str b)
+{
+	if (a.len != b.len) return false;
+	for (int i = 0; i < a.len; i++) {
+		if (a.buf[i] != b.buf[i]) return false;
+	}
+	return true;
+}
+
 typedef struct {
 	u8 *buf;
 	size_t len;
@@ -49,10 +58,31 @@ typedef struct {
 
 #define STRTOBUF(x) ((Buf){(u8 *)(x.buf), (x.len)})
 
+bool bufEqual(Buf a, Buf b)
+{
+	if (a.len != b.len) return false;
+	for (int i = 0; i < a.len; i++) {
+		if (a.buf[i] != b.buf[i]) {
+			printf("unmatched %d [%2X:%2X]\n", i, a.buf[i], b.buf[i]);
+			return false;
+		}
+	}
+	return true;
+}
+
+// in certain environments like during testing you might want to test if a panic happened
+// without actually quitting the application. this can be achieved by defining PANIC_SOFT
+#ifdef PANIC_SOFT
+static bool didPanic = false;
+#endif
 // prints the provided message and then kills the program
 // always returns {false} so it can be used in binary expressions: {doThis() || panic("Failed")}
 bool panic_impl(const char *msg, const char *filename, const int line, ...)
 {
+#ifdef PANIC_SOFT
+	didPanic = true;
+	return false;
+#else
 	printf("%s%s %d PANIC: %s", TERMRED, filename, line, TERMCLEAR);
 	va_list args;
 	va_start(args, line);
@@ -62,6 +92,7 @@ bool panic_impl(const char *msg, const char *filename, const int line, ...)
 	printf("\n");
 	exit(1);
 	return false;
+#endif
 }
 
 #define PANIC(msg, ...) panic_impl(msg, __FILE__, __LINE__, ##__VA_ARGS__)
