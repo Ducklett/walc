@@ -33,6 +33,8 @@ typedef int16_t i16;
 typedef int32_t i32;
 typedef int64_t i64;
 
+void *smalloc(size_t size);
+
 typedef struct {
 	char *buf;
 	size_t len;
@@ -67,6 +69,45 @@ bool bufEqual(Buf a, Buf b)
 		}
 	}
 	return true;
+}
+
+typedef struct {
+	u8 *buf;
+	int len;
+	int capacity;
+} DynamicBuf;
+
+static inline DynamicBuf dynamicBufCreateWithCapacity(int capacity)
+{
+	return (DynamicBuf){.buf = smalloc(capacity), .capacity = capacity, .len = 0};
+}
+static inline DynamicBuf dynamicBufCreate() { return dynamicBufCreateWithCapacity(0); }
+void dynamicBufPush(DynamicBuf *b, u8 byte)
+{
+	bool shouldGrow = b->capacity == b->len;
+	if (shouldGrow) {
+		int newCapacity = b->capacity < 16 ? 16 : b->capacity * 2;
+		u8 *buf = smalloc(newCapacity);
+		if (b->capacity) {
+			memcpy(buf, b->buf, b->len);
+			free(b->buf);
+		}
+		b->buf = buf;
+		b->capacity = newCapacity;
+	}
+	b->buf[b->len++] = byte;
+}
+void dynamicBufAppend(DynamicBuf *b, Buf content)
+{
+	for (int i = 0; i < content.len; i++) {
+		dynamicBufPush(b, content.buf[i]);
+	}
+}
+Buf dynamicBufToBuf(DynamicBuf b) { return (Buf){.buf = b.buf, .len = b.len}; }
+void dynamicBufFree(DynamicBuf *b)
+{
+	free(b->buf);
+	(*b) = (DynamicBuf){0};
 }
 
 // in certain environments like during testing you might want to test if a panic happened
@@ -111,6 +152,14 @@ void todo_impl(const char *msg, const char *filename, const int line, ...)
 }
 
 #define TODO(msg, ...) todo_impl(msg, __FILE__, __LINE__, ##__VA_ARGS__)
+
+// "safe" malloc wrapper that instantly shuts down the application on allocation failure
+void *smalloc(size_t size)
+{
+	void *data = malloc(size);
+	if (!data) PANIC("Allocation failed");
+	return data;
+}
 
 // writes all the bytes from the {buffer} into the file
 // returns {false} on failure
