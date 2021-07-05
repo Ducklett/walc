@@ -1,6 +1,7 @@
 #ifndef STI_H
 #define STI_H
 
+#include "stdarg.h"
 #include <assert.h>
 #include <inttypes.h>
 #include <memory.h>
@@ -42,7 +43,8 @@ typedef struct {
 	u8 *buf;
 	size_t len;
 } Buf;
-#define BUF(x) ((Buf){x, sizeof(x)})
+#define BUF(x)	 ((Buf){x, sizeof(x)})
+#define BUFEMPTY ((Buf){0})
 
 // prints the provided message and then kills the program
 // always returns {false} so it can be used in binary expressions: {doThis() || panic("Failed")}
@@ -81,7 +83,7 @@ void todo_impl(const char *msg, const char *filename, const int line, ...)
 // returns {false} on failure
 bool fileWriteAllBytes(const char *filename, const Buf buffer)
 {
-	FILE *fp = fopen(filename, "w+");
+	FILE *fp = fopen(filename, "wb+");
 	if (!fp) return false;
 	fwrite(buffer.buf, 1, buffer.len, fp);
 	fclose(fp);
