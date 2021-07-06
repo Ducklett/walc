@@ -1,8 +1,8 @@
-/********************************************
+/*
 STI: The standard interface library
 
 Provides some essentials to make working with C less of a pain
-*********************************************/
+*/
 #ifndef STI_H
 #define STI_H
 

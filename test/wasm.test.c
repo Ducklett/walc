@@ -45,10 +45,46 @@ void test_wasm_memory()
 		test("Application will panic when adding memory a second time", didPanic);
 	}
 }
+void test_wasm_func()
+{
+	{
+		Wasm module = wasmModuleCreate();
+		u8 returns[] = {WasmType_i32};
+		u8 opcodes[] = {WasmOp_I32Const, 42};
+		wasmModuleAddFunction(&module, STREMPTY, BUFEMPTY, BUF(returns), BUFEMPTY, BUF(opcodes));
+		test("Single function produces a single function type", module.typeCount == 1);
+
+		Buf bytecode = wasmModuleCompile(module);
+		u8 expectedBytecode[] = {0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00, 0x01, 0x05, 0x01, 0x60, 0x00, 0x01,
+								 0x7F, 0x03, 0x02, 0x01, 0x00, 0x0A, 0x06, 0x01, 0x04, 0x00, 0x41, 0x2A, 0x0B};
+
+		test("Single function produces the correct bytecode", bufEqual(bytecode, BUF(expectedBytecode)));
+	}
+
+	{
+		Wasm module = wasmModuleCreate();
+		u8 returns[] = {WasmType_i32};
+		u8 opcodes[] = {WasmOp_I32Const, 42};
+		wasmModuleAddFunction(&module, STREMPTY, BUFEMPTY, BUF(returns), BUFEMPTY, BUF(opcodes));
+		wasmModuleAddFunction(&module, STREMPTY, BUFEMPTY, BUF(returns), BUFEMPTY, BUF(opcodes));
+		test("Two functions of the same type share a function type", module.typeCount == 1);
+	}
+
+	{
+		Wasm module = wasmModuleCreate();
+		u8 returns[] = {WasmType_i32};
+		u8 returns2[] = {WasmType_I64};
+		u8 opcodes[] = {WasmOp_I32Const, 42};
+		wasmModuleAddFunction(&module, STREMPTY, BUFEMPTY, BUF(returns), BUFEMPTY, BUF(opcodes));
+		wasmModuleAddFunction(&module, STREMPTY, BUFEMPTY, BUF(returns2), BUFEMPTY, BUF(opcodes));
+		test("Two functions of different types get their own function type", module.typeCount == 2);
+	}
+}
 
 void test_wasm()
 {
 	test_section("Wasm");
 	test_wasm_empty_module();
 	test_wasm_memory();
+	test_wasm_func();
 }

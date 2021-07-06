@@ -1,10 +1,35 @@
 /*
 Lighweight C API for generating wasm bytecode
+
+The Wasm* structs are auxilary data structures that are used to build up the module using their accompanying functions
+Once the module is complete the *Compile() functions are used  to translate these structures into raw bytecode
 */
+
 #include "sti.h"
 
 u8 wasmMagic[] = {0x00, 0x61, 0x73, 0x6D};
 u8 wasmModule[] = {0x01, 0x00, 0x00, 0x00};
+
+#define WasmType_Void 0x40
+#define WasmType_F64  0x7C
+#define WasmType_F32  0x7D
+#define WasmType_I64  0x7E
+#define WasmType_i32  0x7F
+
+typedef u8 WasmSection;
+#define WasmSection_Custom	  0x00
+#define WasmSection_Type	  0x01
+#define WasmSection_Import	  0x02
+#define WasmSection_Function  0x03
+#define WasmSection_Table	  0x04
+#define WasmSection_Memory	  0x05
+#define WasmSection_Global	  0x06
+#define WasmSection_Export	  0x07
+#define WasmSection_Start	  0x08
+#define WasmSection_Element	  0x09
+#define WasmSection_Code	  0x0A
+#define WasmSection_Data	  0x0B
+#define WasmSection_DataCount 0x0C
 
 typedef u8 WasmType;
 #define WasmType_Void 0x40
@@ -22,11 +47,11 @@ typedef struct {
 	WasmType *params;
 	int returnCount;
 	WasmType *returns;
-} WasmHeader;
+} WasmFuncType;
 
 typedef struct {
 	int id;
-	int headerIndex;
+	int typeIndex;
 	Str name;
 	WasmType *locals;
 	int localsCount;
@@ -36,7 +61,7 @@ typedef struct {
 
 typedef struct {
 	int id;
-	int headerIndex;
+	int typeIndex;
 	Str *path;
 	int pathCount;
 } WasmImport;
@@ -51,8 +76,8 @@ typedef struct {
 	bool hasMemory;
 	bool hasExports;
 	WasmMemory memory;
-	WasmHeader *headers;
-	int headerCount;
+	WasmFuncType *types;
+	int typeCount;
 	WasmFunc *bodies;
 	int bodyCount;
 	WasmImport *imports;
@@ -65,7 +90,7 @@ Wasm wasmModuleCreate()
 {
 	Wasm module = {
 		.bodies = malloc(sizeof(WasmFunc *) * 0xFF),
-		.headers = malloc(sizeof(WasmHeader *) * 0xFF),
+		.types = malloc(sizeof(WasmFuncType *) * 0xFF),
 		0,
 	};
 
@@ -95,12 +120,12 @@ wasmModuleAddFunction(Wasm *module, Str name, Buf args, Buf rets, Buf locals, Bu
 
 	if (name.len != 0) module->hasExports = true;
 
-	module->headers[module->headerCount++] = (WasmHeader){args.len, args.buf, rets.len, rets.buf};
+	module->types[module->typeCount++] = (WasmFuncType){args.len, args.buf, rets.len, rets.buf};
 	int id = module->bodyCount;
 	module->bodyCount++;
 	module->bodies[id] = (WasmFunc){
 		.id = id,
-		.headerIndex = module->headerCount - 1,
+		.typeIndex = module->typeCount - 1,
 		.name = name,
 		.locals = locals.buf,
 		.localsCount = locals.len,
@@ -117,41 +142,41 @@ Buf wasmModuleCompile(Wasm module)
 	dynamicBufAppend(&bytecode, BUF(wasmMagic));
 	dynamicBufAppend(&bytecode, BUF(wasmModule));
 
-	if (module.headerCount) {
-		dynamicBufPush(&bytecode, 0x01);
+	if (module.typeCount) {
+		dynamicBufPush(&bytecode, WasmSection_Type);
 		// TODO: encode this as LEB128 u32
 		u8 *lenAddr = wasmReserveByte(&bytecode);
-		int headerstart = bytecode.len;
-		dynamicBufPush(&bytecode, module.headerCount);
-		for (int i = 0; i < module.headerCount; i++) {
-			WasmHeader header = module.headers[i];
+		int typestart = bytecode.len;
+		dynamicBufPush(&bytecode, module.typeCount);
+		for (int i = 0; i < module.typeCount; i++) {
+			WasmFuncType functype = module.types[i];
 
 			dynamicBufPush(&bytecode, 0x60);
-			dynamicBufPush(&bytecode, header.paramCount);
-			for (int j = 0; j < header.paramCount; j++) {
-				dynamicBufPush(&bytecode, header.params[j]);
+			dynamicBufPush(&bytecode, functype.paramCount);
+			for (int j = 0; j < functype.paramCount; j++) {
+				dynamicBufPush(&bytecode, functype.params[j]);
 			}
 
-			dynamicBufPush(&bytecode, header.returnCount);
-			for (int j = 0; j < header.returnCount; j++) {
-				dynamicBufPush(&bytecode, header.returns[j]);
+			dynamicBufPush(&bytecode, functype.returnCount);
+			for (int j = 0; j < functype.returnCount; j++) {
+				dynamicBufPush(&bytecode, functype.returns[j]);
 			}
 		}
-		*lenAddr = bytecode.len - headerstart;
+		*lenAddr = bytecode.len - typestart;
 	}
 
 	if (module.bodyCount) {
-		dynamicBufPush(&bytecode, 0x03);
+		dynamicBufPush(&bytecode, WasmSection_Function);
 		dynamicBufPush(&bytecode, module.bodyCount + 1);
 		dynamicBufPush(&bytecode, module.bodyCount);
 
 		for (int i = 0; i < module.bodyCount; i++) {
-			dynamicBufPush(&bytecode, module.bodies[i].headerIndex);
+			dynamicBufPush(&bytecode, module.bodies[i].typeIndex);
 		}
 	}
 
 	if (module.hasMemory) {
-		dynamicBufPush(&bytecode, 0x05);
+		dynamicBufPush(&bytecode, WasmSection_Memory);
 		dynamicBufPush(&bytecode, 0x04);
 		dynamicBufPush(&bytecode, 0x01);
 		dynamicBufPush(&bytecode, 0x01);
@@ -160,10 +185,11 @@ Buf wasmModuleCompile(Wasm module)
 	}
 
 	if (module.hasExports) {
-		dynamicBufPush(&bytecode, 0x07);
+		dynamicBufPush(&bytecode, WasmSection_Export);
 		u8 *lenAddr = wasmReserveByte(&bytecode);
 		int exportStart = bytecode.len;
 		u8 *countAddr = wasmReserveByte(&bytecode);
+		*countAddr = 0;
 
 		if (module.hasMemory) {
 			dynamicBufPush(&bytecode, module.memory.name.len);
@@ -188,7 +214,7 @@ Buf wasmModuleCompile(Wasm module)
 	}
 
 	if (module.bodyCount) {
-		dynamicBufPush(&bytecode, 0x0A);
+		dynamicBufPush(&bytecode, WasmSection_Code);
 		u8 *lenAddr = wasmReserveByte(&bytecode);
 		int bodiesStart = bytecode.len;
 		dynamicBufPush(&bytecode, module.bodyCount);
