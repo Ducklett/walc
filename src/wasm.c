@@ -88,6 +88,7 @@ typedef struct {
 
 Wasm wasmModuleCreate()
 {
+	// TODO: grow these when they run out of space
 	Wasm module = {
 		.bodies = malloc(sizeof(WasmFunc *) * 0xFF),
 		.types = malloc(sizeof(WasmFuncType *) * 0xFF),
@@ -111,17 +112,24 @@ void wasmModuleAddMemory(Wasm *module, Str name, int pages, int maxPages)
 	};
 }
 
+static int wasmModuleFindOrCreateFuncType(Wasm *module, Buf args, Buf rets)
+{
+	for (int i = 0; i < module->typeCount; i++) {
+		WasmFuncType t = module->types[i];
+		if (bufEqual((Buf){t.params, t.paramCount}, args) && bufEqual((Buf){t.returns, t.returnCount}, rets)) return i;
+	}
+	module->types[module->typeCount++] = (WasmFuncType){args.len, args.buf, rets.len, rets.buf};
+	return module->typeCount - 1;
+}
+
 // adds a new function to the module
 // the provided buffers shouldn't be freed until you are done with the {Wasm} object
-wasmModuleAddFunction(Wasm *module, Str name, Buf args, Buf rets, Buf locals, Buf opcodes)
+void wasmModuleAddFunction(Wasm *module, Str name, Buf args, Buf rets, Buf locals, Buf opcodes)
 {
-	// TODO: compare headers
-	// TODO: use some kind of bump/arena allocator
-
 	if (name.len != 0) module->hasExports = true;
 
-	module->types[module->typeCount++] = (WasmFuncType){args.len, args.buf, rets.len, rets.buf};
 	int id = module->bodyCount;
+	int typeIndex = wasmModuleFindOrCreateFuncType(module, args, rets);
 	module->bodyCount++;
 	module->bodies[id] = (WasmFunc){
 		.id = id,
