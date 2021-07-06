@@ -75,7 +75,6 @@ typedef struct {
 
 typedef struct {
 	bool hasMemory;
-	bool hasExports;
 	WasmMemory memory;
 	WasmFuncType *types;
 	int typeCount;
@@ -83,6 +82,7 @@ typedef struct {
 	int bodyCount;
 	WasmImport *imports;
 	int importCount;
+	int exportCount;
 
 	int funcCount;
 } Wasm;
@@ -105,7 +105,7 @@ void wasmModuleAddMemory(Wasm *module, Str name, int pages, int maxPages)
 {
 	if (module->hasMemory) PANIC("Memory should only be set once.");
 	module->hasMemory = true;
-	if (name.len != 0) module->hasExports = true;
+	if (name.len != 0) module->exportCount++;
 	module->memory = (WasmMemory){
 		.name = name,
 		.pages = pages,
@@ -127,7 +127,7 @@ static int wasmModuleFindOrCreateFuncType(Wasm *module, Buf args, Buf rets)
 // the provided buffers shouldn't be freed until you are done with the {Wasm} object
 void wasmModuleAddFunction(Wasm *module, Str name, Buf args, Buf rets, Buf locals, Buf opcodes)
 {
-	if (name.len != 0) module->hasExports = true;
+	if (name.len != 0) module->exportCount++;
 
 	int id = module->bodyCount;
 	int typeIndex = wasmModuleFindOrCreateFuncType(module, args, rets);
@@ -145,6 +145,13 @@ void wasmModuleAddFunction(Wasm *module, Str name, Buf args, Buf rets, Buf local
 
 static inline u8 *wasmReserveByte(DynamicBuf *buf) { return buf->buf + buf->len++; }
 
+void wasmAppendSection(DynamicBuf *destination, WasmSection section, Buf sectionContent)
+{
+	dynamicBufPush(destination, section);
+	leb128EncodeU(sectionContent.len, destination, NULL);
+	dynamicBufAppend(destination, sectionContent);
+}
+
 Buf wasmModuleCompile(Wasm module)
 {
 	DynamicBuf bytecode = dynamicBufCreateWithCapacity(0xFFFF);
@@ -152,90 +159,95 @@ Buf wasmModuleCompile(Wasm module)
 	dynamicBufAppend(&bytecode, BUF(wasmModule));
 
 	if (module.typeCount) {
-		dynamicBufPush(&bytecode, WasmSection_Type);
-		// TODO: encode this as LEB128 u32
-		u8 *lenAddr = wasmReserveByte(&bytecode);
-		int typestart = bytecode.len;
-		dynamicBufPush(&bytecode, module.typeCount);
+		DynamicBuf typeBuf = dynamicBufCreateWithCapacity(0xFF);
+		leb128EncodeU(module.typeCount, &typeBuf, NULL);
 		for (int i = 0; i < module.typeCount; i++) {
 			WasmFuncType functype = module.types[i];
 
-			dynamicBufPush(&bytecode, 0x60);
-			dynamicBufPush(&bytecode, functype.paramCount);
+			dynamicBufPush(&typeBuf, 0x60);
+			dynamicBufPush(&typeBuf, functype.paramCount);
 			for (int j = 0; j < functype.paramCount; j++) {
-				dynamicBufPush(&bytecode, functype.params[j]);
+				dynamicBufPush(&typeBuf, functype.params[j]);
 			}
 
-			dynamicBufPush(&bytecode, functype.returnCount);
+			dynamicBufPush(&typeBuf, functype.returnCount);
 			for (int j = 0; j < functype.returnCount; j++) {
-				dynamicBufPush(&bytecode, functype.returns[j]);
+				dynamicBufPush(&typeBuf, functype.returns[j]);
 			}
 		}
-		*lenAddr = bytecode.len - typestart;
+
+		wasmAppendSection(&bytecode, WasmSection_Type, dynamicBufToBuf(typeBuf));
+		dynamicBufFree(&typeBuf);
 	}
 
 	if (module.bodyCount) {
-		dynamicBufPush(&bytecode, WasmSection_Function);
-		dynamicBufPush(&bytecode, module.bodyCount + 1);
-		dynamicBufPush(&bytecode, module.bodyCount);
+		DynamicBuf bodyBuf = dynamicBufCreateWithCapacity(0xFF);
+		leb128EncodeU(module.bodyCount, &bodyBuf, NULL);
 
 		for (int i = 0; i < module.bodyCount; i++) {
-			dynamicBufPush(&bytecode, module.bodies[i].typeIndex);
+			leb128EncodeU(module.bodies[i].typeIndex, &bodyBuf, NULL);
 		}
+
+		wasmAppendSection(&bytecode, WasmSection_Function, dynamicBufToBuf(bodyBuf));
+		dynamicBufFree(&bodyBuf);
 	}
 
 	if (module.hasMemory) {
-		dynamicBufPush(&bytecode, WasmSection_Memory);
-		dynamicBufPush(&bytecode, 0x04);
-		dynamicBufPush(&bytecode, 0x01);
-		dynamicBufPush(&bytecode, 0x01);
-		dynamicBufPush(&bytecode, module.memory.pages);
-		dynamicBufPush(&bytecode, module.memory.maxPages);
+		DynamicBuf memBuf = dynamicBufCreateWithCapacity(0xF);
+
+		const int memCount = 1;
+		dynamicBufPush(&memBuf, memCount);
+		dynamicBufPush(&memBuf, module.memory.maxPages ? 1 : 0);
+		dynamicBufPush(&memBuf, module.memory.pages);
+		if (module.memory.maxPages) dynamicBufPush(&memBuf, module.memory.maxPages);
+
+		wasmAppendSection(&bytecode, WasmSection_Memory, dynamicBufToBuf(memBuf));
+		dynamicBufFree(&memBuf);
 	}
 
-	if (module.hasExports) {
-		dynamicBufPush(&bytecode, WasmSection_Export);
-		u8 *lenAddr = wasmReserveByte(&bytecode);
-		int exportStart = bytecode.len;
-		u8 *countAddr = wasmReserveByte(&bytecode);
-		*countAddr = 0;
+	if (module.exportCount) {
+		DynamicBuf exportBuf = dynamicBufCreateWithCapacity(0xFF);
+
+		leb128EncodeU(module.exportCount, &exportBuf, NULL);
 
 		if (module.hasMemory) {
-			dynamicBufPush(&bytecode, module.memory.name.len);
-			dynamicBufAppend(&bytecode, STRTOBUF(module.memory.name));
-			dynamicBufPush(&bytecode, 0x02);
-			dynamicBufPush(&bytecode, 0x00);
-			(*countAddr)++;
+			dynamicBufPush(&exportBuf, module.memory.name.len);
+			dynamicBufAppend(&exportBuf, STRTOBUF(module.memory.name));
+			dynamicBufPush(&exportBuf, 0x02);
+			dynamicBufPush(&exportBuf, 0x00);
 		}
 
 		for (int i = 0; i < module.bodyCount; i++) {
 			WasmFunc body = module.bodies[i];
 			if (body.name.len == 0) continue;
 
-			dynamicBufPush(&bytecode, body.name.len);
-			dynamicBufAppend(&bytecode, STRTOBUF(body.name));
-			dynamicBufPush(&bytecode, 0x00);
-			dynamicBufPush(&bytecode, body.id);
-			(*countAddr)++;
+			dynamicBufPush(&exportBuf, body.name.len);
+			dynamicBufAppend(&exportBuf, STRTOBUF(body.name));
+			dynamicBufPush(&exportBuf, 0x00);
+			dynamicBufPush(&exportBuf, body.id);
 		}
 
-		*lenAddr = bytecode.len - exportStart;
+		wasmAppendSection(&bytecode, WasmSection_Export, dynamicBufToBuf(exportBuf));
+		dynamicBufFree(&exportBuf);
 	}
 
 	if (module.bodyCount) {
-		dynamicBufPush(&bytecode, WasmSection_Code);
-		u8 *lenAddr = wasmReserveByte(&bytecode);
-		int bodiesStart = bytecode.len;
-		dynamicBufPush(&bytecode, module.bodyCount);
+		DynamicBuf bodyBuf = dynamicBufCreateWithCapacity(0xFF);
+
+		leb128EncodeU(module.bodyCount, &bodyBuf, NULL);
+
 		for (int i = 0; i < module.bodyCount; i++) {
 			WasmFunc body = module.bodies[i];
 			int bodyLen = 1 + /*locals*/ 1 + body.opcodesCount;
-			dynamicBufPush(&bytecode, bodyLen);
-			dynamicBufPush(&bytecode, 0 /*locals*/);
-			dynamicBufAppend(&bytecode, (Buf){body.opcodes, body.opcodesCount});
-			dynamicBufPush(&bytecode, 0x0B);
+			leb128EncodeU(bodyLen, &bodyBuf, NULL);
+			// TODO: support locals
+			dynamicBufPush(&bodyBuf, 0 /*locals*/);
+			dynamicBufAppend(&bodyBuf, (Buf){body.opcodes, body.opcodesCount});
+			dynamicBufPush(&bodyBuf, 0x0B);
 		}
-		*lenAddr = bytecode.len - bodiesStart;
+
+		wasmAppendSection(&bytecode, WasmSection_Code, dynamicBufToBuf(bodyBuf));
+		dynamicBufFree(&bodyBuf);
 	}
 
 	return dynamicBufToBuf(bytecode);
