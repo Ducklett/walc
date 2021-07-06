@@ -2,7 +2,7 @@
 #define TEST_ENTRYPOINT test_leb128
 #endif
 
-#include "../src/leb128.c"
+#include "../src/leb128.h"
 #include "test.h"
 
 void signed_numbers_under_64_encode_as_themselves()
@@ -10,13 +10,14 @@ void signed_numbers_under_64_encode_as_themselves()
 	int failI = -1;
 	for (int i = 0; i < 64; i++) {
 		int byteCount;
-		u8 *bytes = leb128EncodeS(i, &byteCount);
-		if (byteCount != 1 || *bytes != i) {
+		DynamicBuf bytes = dynamicBufCreate();
+		leb128EncodeS(i, &bytes, &byteCount);
+		if (byteCount != 1 || bytes.buf[0] != i) {
 			failI = i;
-			free(bytes);
+			dynamicBufFree(&bytes);
 			break;
 		}
-		free(bytes);
+		dynamicBufFree(&bytes);
 	}
 	test("Signed numbers under 64 encode as themselves", failI == -1);
 	if (failI != -1) printf("Failed at %d\n", failI);
@@ -27,13 +28,14 @@ void signed_numbers_above_64_require_more_bytes()
 	int failI = -1;
 	for (int i = 64; i < 255; i += 8) {
 		int byteCount;
-		u8 *bytes = leb128EncodeS(i, &byteCount);
+		DynamicBuf bytes = dynamicBufCreate();
+		leb128EncodeS(i, &bytes, &byteCount);
 		if (byteCount < 2) {
 			failI = i;
-			free(bytes);
+			dynamicBufFree(&bytes);
 			break;
 		}
-		free(bytes);
+		dynamicBufFree(&bytes);
 	}
 	test("Signed numbers above 64 require more bytes", failI == -1);
 	if (failI != -1) printf("Failed at %d\n", failI);
@@ -47,21 +49,22 @@ typedef struct {
 void signed_number_encodes_correctly(SignedLeb128TestData data)
 {
 	int byteCount;
-	u8 *bytes = leb128EncodeS(data.n, &byteCount);
+	DynamicBuf bytes = dynamicBufCreate();
+	leb128EncodeS(data.n, &bytes, &byteCount);
 
 	bool pass = true;
 	if (byteCount == 0) {
 		pass = false;
 	} else {
 		for (int i = 0; i < byteCount; i++) {
-			if (bytes[i] != data.bytes[i]) {
+			if (bytes.buf[i] != data.bytes[i]) {
 				pass = false;
 				break;
 			}
 		}
 	}
 
-	free(bytes);
+	dynamicBufFree(&bytes);
 	char msg[64];
 	sprintf(msg, "%d encodes correctly", data.n);
 	test(msg, pass);
@@ -116,14 +119,16 @@ void unsigned_numbers_under_128_encode_as_themselves()
 	int failI = -1;
 	for (int i = 0; i < 128; i++) {
 		int byteCount;
-		u8 *bytes = leb128EncodeU(i, &byteCount);
-		if (byteCount != 1 || *bytes != i) {
+		DynamicBuf bytes = dynamicBufCreate();
+		leb128EncodeU(i, &bytes, &byteCount);
+		if (byteCount != 1 || bytes.buf[0] != i) {
 			failI = i;
-			free(bytes);
+			dynamicBufFree(&bytes);
 			break;
 		}
-		free(bytes);
+		dynamicBufFree(&bytes);
 	}
+
 	test("Unsigned numbers under 128 encode as themselves", failI == -1);
 	if (failI != -1) printf("Failed at %d\n", failI);
 }
@@ -133,13 +138,14 @@ void unsigned_numbers_above_128_require_more_bytes()
 	int failI = -1;
 	for (int i = 128; i < 255; i += 8) {
 		int byteCount;
-		u8 *bytes = leb128EncodeU(i, &byteCount);
+		DynamicBuf bytes = dynamicBufCreate();
+		leb128EncodeU(i, &bytes, &byteCount);
 		if (byteCount < 2) {
 			failI = i;
-			free(bytes);
+			dynamicBufFree(&bytes);
 			break;
 		}
-		free(bytes);
+		dynamicBufFree(&bytes);
 	}
 	test("Unsigned numbers above 128 require more bytes", failI == -1);
 	if (failI != -1) printf("Failed at %d\n", failI);
@@ -148,7 +154,9 @@ void unsigned_numbers_above_128_require_more_bytes()
 void unsigned_number_encodes_correctly(UnsignedLeb128TestData data)
 {
 	int byteCount;
-	u8 *bytes = leb128EncodeU(data.n, &byteCount);
+
+	DynamicBuf bytes = dynamicBufCreate();
+	leb128EncodeU(data.n, &bytes, &byteCount);
 
 	bool pass = true;
 
@@ -157,14 +165,14 @@ void unsigned_number_encodes_correctly(UnsignedLeb128TestData data)
 	} else {
 
 		for (int i = 0; i < byteCount; i++) {
-			if (bytes[i] != data.bytes[i]) {
+			if (bytes.buf[i] != data.bytes[i]) {
 				pass = false;
 				break;
 			}
 		}
 	}
 
-	free(bytes);
+	dynamicBufFree(&bytes);
 	char msg[64];
 	sprintf(msg, "%zu encodes correctly", data.n);
 	test(msg, pass);

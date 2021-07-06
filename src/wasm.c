@@ -5,6 +5,7 @@ The Wasm* structs are auxilary data structures that are used to build up the mod
 Once the module is complete the *Compile() functions are used  to translate these structures into raw bytecode
 */
 
+#include "leb128.h"
 #include "sti.h"
 
 u8 wasmMagic[] = {0x00, 0x61, 0x73, 0x6D};

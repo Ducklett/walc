@@ -1,8 +1,6 @@
-#include <assert.h>
-#include <inttypes.h>
-#include <memory.h>
-#include <stdbool.h>
-#include <stdlib.h>
+#ifndef LEB128_H
+#define LEB128_H
+#include "sti.h"
 
 typedef uint8_t u8;
 
@@ -22,13 +20,11 @@ uint32_t leb128DecodeU(u8 *bytes)
 	return result;
 }
 
-u8 *leb128EncodeU(uint32_t number, int *byteCount)
+void leb128EncodeU(uint32_t number, DynamicBuf *buf, int *byteCount)
 {
-	*byteCount = 0;
-	const int maxBytes = 8;
-	u8 *bytes = malloc(maxBytes);
+	int n = 0;
 
-	int iterations = 0;
+	int i = 0;
 	do {
 		u8 byte = number & 0x7F;
 		number >>= 7;
@@ -37,13 +33,12 @@ u8 *leb128EncodeU(uint32_t number, int *byteCount)
 			byte |= 0x80;
 		}
 
-		bytes[(*byteCount)++] = byte;
-		iterations++;
-		if (iterations > 8) break;
-
+		dynamicBufPush(buf, byte);
+		n++;
+		if (i++ > 8) break;
 	} while (number != 0);
 
-	return bytes;
+	if (byteCount) *byteCount = n;
 }
 
 int leb128DecodeS(u8 *bytes)
@@ -67,10 +62,9 @@ int leb128DecodeS(u8 *bytes)
 	}
 }
 
-u8 *leb128EncodeS(int number, int *byteCount)
+void leb128EncodeS(int number, DynamicBuf *buf, int *byteCount)
 {
 	const int maxBytes = 8;
-	u8 *bytes = malloc(maxBytes);
 	int i;
 	for (i = 0; i < maxBytes; i++) {
 		u8 byte = number & 0x7f;
@@ -80,17 +74,17 @@ u8 *leb128EncodeS(int number, int *byteCount)
 		bool isSigned = byte & SIGNBIT;
 		bool atEndOfNumber = (number == 0 && !isSigned) || (number == -1 && isSigned);
 		if (atEndOfNumber) {
-			bytes[i] = byte;
+			dynamicBufPush(buf, byte);
 			break;
 		} else {
 			const u8 MSB = 0x80;
-			bytes[i] = byte | MSB;
+			dynamicBufPush(buf, byte | MSB);
 		}
 	}
 
 	assert((number == 0 || number == -1) && "Number should be fully consumed");
 
-	*byteCount = i + 1;
-
-	return bytes;
+	if (byteCount) *byteCount = i + 1;
 }
+
+#endif // LEB128_H
