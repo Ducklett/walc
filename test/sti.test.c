@@ -2,8 +2,8 @@
 #define TEST_ENTRYPOINT test_wasm
 #endif
 
-#include "test.h"
 #include <string.h>
+#include <test.h>
 
 void test_sti_str()
 {

@@ -1,6 +1,6 @@
 #ifndef LEB128_H
 #define LEB128_H
-#include "sti.h"
+#include <stin.h>
 
 typedef uint8_t u8;
 

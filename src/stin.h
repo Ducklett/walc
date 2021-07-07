@@ -1,5 +1,5 @@
 /*
-STI: The standard interface library
+STIN: The standard interface library
 
 Provides some essentials to make working with C less of a pain
 */
@@ -13,6 +13,7 @@ Provides some essentials to make working with C less of a pain
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #define TERMCLEAR		"\033[0m"
 #define TERMRED			"\033[0;31m"

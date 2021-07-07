@@ -2,11 +2,11 @@
 #define TEST_ENTRYPOINT test_main
 #endif
 
-#include "test.h"
+#include <test.h>
 
-#include "leb128.test.c"
-#include "sti.test.c"
-#include "wasm.test.c"
+#include <leb128.test.c>
+#include <sti.test.c>
+#include <wasm.test.c>
 
 void test_main()
 {

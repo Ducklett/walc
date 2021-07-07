@@ -10,7 +10,7 @@
 #define OR		 ||
 #define AND		 &&
 
-#include "../src/sti.h"
+#include <stin.h>
 
 static int test_pass;
 static int test_fail;

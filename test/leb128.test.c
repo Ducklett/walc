@@ -2,8 +2,8 @@
 #define TEST_ENTRYPOINT test_leb128
 #endif
 
-#include "../src/leb128.h"
-#include "test.h"
+#include <leb128.h>
+#include <test.h>
 
 void signed_numbers_under_64_encode_as_themselves()
 {

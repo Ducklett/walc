@@ -1,5 +1,5 @@
-#include "sti.h"
-#include "wasm.c"
+#include <stin.h>
+#include <wasm.c>
 
 int main(int argc, char **argv)
 {

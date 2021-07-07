@@ -2,8 +2,8 @@
 #define TEST_ENTRYPOINT test_wasm
 #endif
 
-#include "../src/wasm.c"
-#include "test.h"
+#include <test.h>
+#include <wasm.c>
 
 void test_wasm_empty_module()
 {
