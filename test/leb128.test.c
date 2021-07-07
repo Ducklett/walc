@@ -9,10 +9,9 @@ void signed_numbers_under_64_encode_as_themselves()
 {
 	int failI = -1;
 	for (int i = 0; i < 64; i++) {
-		int byteCount;
 		DynamicBuf bytes = dynamicBufCreate();
-		leb128EncodeS(i, &bytes, &byteCount);
-		if (byteCount != 1 || bytes.buf[0] != i) {
+		leb128EncodeS(i, &bytes);
+		if (bytes.len != 1 || bytes.buf[0] != i) {
 			failI = i;
 			dynamicBufFree(&bytes);
 			break;
@@ -27,10 +26,9 @@ void signed_numbers_above_64_require_more_bytes()
 {
 	int failI = -1;
 	for (int i = 64; i < 255; i += 8) {
-		int byteCount;
 		DynamicBuf bytes = dynamicBufCreate();
-		leb128EncodeS(i, &bytes, &byteCount);
-		if (byteCount < 2) {
+		leb128EncodeS(i, &bytes);
+		if (bytes.len < 2) {
 			failI = i;
 			dynamicBufFree(&bytes);
 			break;
@@ -48,15 +46,14 @@ typedef struct {
 
 void signed_number_encodes_correctly(SignedLeb128TestData data)
 {
-	int byteCount;
 	DynamicBuf bytes = dynamicBufCreate();
-	leb128EncodeS(data.n, &bytes, &byteCount);
+	leb128EncodeS(data.n, &bytes);
 
 	bool pass = true;
-	if (byteCount == 0) {
+	if (bytes.len == 0) {
 		pass = false;
 	} else {
-		for (int i = 0; i < byteCount; i++) {
+		for (int i = 0; i < bytes.len; i++) {
 			if (bytes.buf[i] != data.bytes[i]) {
 				pass = false;
 				break;
@@ -118,10 +115,9 @@ void unsigned_numbers_under_128_encode_as_themselves()
 {
 	int failI = -1;
 	for (int i = 0; i < 128; i++) {
-		int byteCount;
 		DynamicBuf bytes = dynamicBufCreate();
-		leb128EncodeU(i, &bytes, &byteCount);
-		if (byteCount != 1 || bytes.buf[0] != i) {
+		leb128EncodeU(i, &bytes);
+		if (bytes.len != 1 || bytes.buf[0] != i) {
 			failI = i;
 			dynamicBufFree(&bytes);
 			break;
@@ -137,10 +133,9 @@ void unsigned_numbers_above_128_require_more_bytes()
 {
 	int failI = -1;
 	for (int i = 128; i < 255; i += 8) {
-		int byteCount;
 		DynamicBuf bytes = dynamicBufCreate();
-		leb128EncodeU(i, &bytes, &byteCount);
-		if (byteCount < 2) {
+		leb128EncodeU(i, &bytes);
+		if (bytes.len < 2) {
 			failI = i;
 			dynamicBufFree(&bytes);
 			break;
@@ -153,18 +148,17 @@ void unsigned_numbers_above_128_require_more_bytes()
 
 void unsigned_number_encodes_correctly(UnsignedLeb128TestData data)
 {
-	int byteCount;
 
 	DynamicBuf bytes = dynamicBufCreate();
-	leb128EncodeU(data.n, &bytes, &byteCount);
+	leb128EncodeU(data.n, &bytes);
 
 	bool pass = true;
 
-	if (byteCount == 0) {
+	if (bytes.len == 0) {
 		pass = false;
 	} else {
 
-		for (int i = 0; i < byteCount; i++) {
+		for (int i = 0; i < bytes.len; i++) {
 			if (bytes.buf[i] != data.bytes[i]) {
 				pass = false;
 				break;

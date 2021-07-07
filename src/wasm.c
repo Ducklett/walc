@@ -43,6 +43,16 @@ typedef u8 WasmOp;
 #define WasmOp_I32Const 0x41
 #define WasmOp_I32Add	0x6A
 
+typedef u32 WasmTypeIdx;
+typedef u32 WasmFuncIdx;
+typedef u32 WasmTableIdx;
+typedef u32 WasmMemIdx;
+typedef u32 WasmGlobalIdx;
+typedef u32 WasmElemIdx;
+typedef u32 WasmDataIdx;
+typedef u32 WasmLocalIdx;
+typedef u32 WasmLabelIdx;
+
 typedef struct {
 	int paramCount;
 	WasmType *params;
@@ -148,7 +158,7 @@ static inline u8 *wasmReserveByte(DynamicBuf *buf) { return buf->buf + buf->len+
 void wasmAppendSection(DynamicBuf *destination, WasmSection section, Buf sectionContent)
 {
 	dynamicBufPush(destination, section);
-	leb128EncodeU(sectionContent.len, destination, NULL);
+	leb128EncodeU(sectionContent.len, destination);
 	dynamicBufAppend(destination, sectionContent);
 }
 
@@ -160,7 +170,7 @@ Buf wasmModuleCompile(Wasm module)
 
 	if (module.typeCount) {
 		DynamicBuf typeBuf = dynamicBufCreateWithCapacity(0xFF);
-		leb128EncodeU(module.typeCount, &typeBuf, NULL);
+		leb128EncodeU(module.typeCount, &typeBuf);
 		for (int i = 0; i < module.typeCount; i++) {
 			WasmFuncType functype = module.types[i];
 
@@ -182,10 +192,10 @@ Buf wasmModuleCompile(Wasm module)
 
 	if (module.bodyCount) {
 		DynamicBuf bodyBuf = dynamicBufCreateWithCapacity(0xFF);
-		leb128EncodeU(module.bodyCount, &bodyBuf, NULL);
+		leb128EncodeU(module.bodyCount, &bodyBuf);
 
 		for (int i = 0; i < module.bodyCount; i++) {
-			leb128EncodeU(module.bodies[i].typeIndex, &bodyBuf, NULL);
+			leb128EncodeU(module.bodies[i].typeIndex, &bodyBuf);
 		}
 
 		wasmAppendSection(&bytecode, WasmSection_Function, dynamicBufToBuf(bodyBuf));
@@ -208,7 +218,7 @@ Buf wasmModuleCompile(Wasm module)
 	if (module.exportCount) {
 		DynamicBuf exportBuf = dynamicBufCreateWithCapacity(0xFF);
 
-		leb128EncodeU(module.exportCount, &exportBuf, NULL);
+		leb128EncodeU(module.exportCount, &exportBuf);
 
 		if (module.hasMemory) {
 			dynamicBufPush(&exportBuf, module.memory.name.len);
@@ -234,12 +244,12 @@ Buf wasmModuleCompile(Wasm module)
 	if (module.bodyCount) {
 		DynamicBuf bodyBuf = dynamicBufCreateWithCapacity(0xFF);
 
-		leb128EncodeU(module.bodyCount, &bodyBuf, NULL);
+		leb128EncodeU(module.bodyCount, &bodyBuf);
 
 		for (int i = 0; i < module.bodyCount; i++) {
 			WasmFunc body = module.bodies[i];
 			int bodyLen = 1 + /*locals*/ 1 + body.opcodesCount;
-			leb128EncodeU(bodyLen, &bodyBuf, NULL);
+			leb128EncodeU(bodyLen, &bodyBuf);
 			// TODO: support locals
 			dynamicBufPush(&bodyBuf, 0 /*locals*/);
 			dynamicBufAppend(&bodyBuf, (Buf){body.opcodes, body.opcodesCount});
@@ -251,4 +261,273 @@ Buf wasmModuleCompile(Wasm module)
 	}
 
 	return dynamicBufToBuf(bytecode);
+}
+
+// The unreachable instruction causes an unconditional trap.
+void wasmPushOpUnreachable(DynamicBuf *body) { dynamicBufPush(body, 0x00); }
+// The nop instruction does nothing
+void wasmPushOpNop(DynamicBuf *body) { dynamicBufPush(body, 0x01); }
+// The block, loop and if instructions are structured instructions.
+// They bracket nested sequences of instructions, called blocks, terminated with, or separated by, end or else
+// pseudo-instructions. As the grammar prescribes, they must be well-nested.
+void wasmPushOpBlock(DynamicBuf *body, u32 blocktype)
+{
+	dynamicBufPush(body, 0x02);
+	if (blocktype) leb128EncodeU(blocktype, body);
+}
+void wasmPushOpLoop(DynamicBuf *body, u32 blocktype)
+{
+	dynamicBufPush(body, 0x03);
+	if (blocktype) leb128EncodeU(blocktype, body);
+}
+void wasmPushOpIf(DynamicBuf *body, u32 blocktype)
+{
+	dynamicBufPush(body, 0x04);
+	leb128EncodeU(blocktype, body);
+}
+void wasmPushOpElse(DynamicBuf *body) { dynamicBufPush(body, 0x05); }
+void wasmPushOpEnd(DynamicBuf *body) { dynamicBufPush(body, 0x0B); }
+// br performs an unconditional branch
+void wasmPushOpBr(DynamicBuf *body, WasmLabelIdx l)
+{
+	dynamicBufPush(body, 0x0C);
+	leb128EncodeU(l, body);
+}
+// br_if performs a conditional branch
+void wasmPushOpBrIf(DynamicBuf *body, WasmLabelIdx l)
+{
+	dynamicBufPush(body, 0x0D);
+	leb128EncodeU(l, body);
+}
+// br_table performs an indirect branch through an operand indexing into the label vector that is an immediate to the
+// instruction, or to a default target if the operand is out of bounds
+void wasmPushOpBrTable(DynamicBuf *body) { dynamicBufPush(body, 0x0E); }
+// The return instruction is a shortcut for an unconditional branch to the outermost block, which implicitly is the body
+// of the current function
+void wasmPushOpBrReturn(DynamicBuf *body) { dynamicBufPush(body, 0x0F); }
+// The call instruction invokes another function, consuming the necessary arguments from the stack and returning the
+// result values of the call
+void wasmPushOpCall(DynamicBuf *body, WasmFuncIdx x)
+{
+	dynamicBufPush(body, 0x10);
+	leb128EncodeU(x, body);
+}
+// The call_indirect instruction calls a function indirectly through an operand indexing into a table that is denoted by
+// a table index and must have type funcref
+void wasmPushOpCallIndirect(DynamicBuf *body, WasmTableIdx x, WasmTypeIdx y)
+{
+	dynamicBufPush(body, 0x10);
+	leb128EncodeU(x, body);
+	leb128EncodeU(y, body);
+}
+// The drop instruction simply throws away a single operand
+void wasmPushOpDrop(DynamicBuf *body) { dynamicBufPush(body, 0x1A); }
+// The select instruction selects one of its first two operands based on whether its third operand is zero or not.
+// It may include a value type determining the type of these operands.
+// If missing, the operands must be of numeric type.
+void wasmPushOpSelect(DynamicBuf *body) { dynamicBufPush(body, 0x1B); }
+void wasmPushOpSelectT(DynamicBuf *body, WasmTypeIdx t)
+{
+	dynamicBufPush(body, 0x1B);
+	leb128EncodeU(t, body);
+}
+
+void wasmPushOpLocalGet(DynamicBuf *body, WasmLocalIdx x)
+{
+	dynamicBufPush(body, 0x20);
+	leb128EncodeU(x, body);
+}
+void wasmPushOpLocalSet(DynamicBuf *body, WasmLocalIdx x)
+{
+	dynamicBufPush(body, 0x21);
+	leb128EncodeU(x, body);
+}
+void wasmPushOpLocalTee(DynamicBuf *body, WasmLocalIdx x)
+{
+	dynamicBufPush(body, 0x22);
+	leb128EncodeU(x, body);
+}
+void wasmPushOpGlobalGet(DynamicBuf *body, WasmLocalIdx x)
+{
+	dynamicBufPush(body, 0x23);
+	leb128EncodeU(x, body);
+}
+void wasmPushOpGlobalSet(DynamicBuf *body, WasmLocalIdx x)
+{
+	dynamicBufPush(body, 0x24);
+	leb128EncodeU(x, body);
+}
+void wasmPushOpTableGet(DynamicBuf *body, WasmLocalIdx x)
+{
+	dynamicBufPush(body, 0x25);
+	leb128EncodeU(x, body);
+}
+void wasmPushOpTableSet(DynamicBuf *body, WasmLocalIdx x)
+{
+	dynamicBufPush(body, 0x26);
+	leb128EncodeU(x, body);
+}
+
+void wasmPushOpi32Load(DynamicBuf *body, i32 offset, i32 align)
+{
+	dynamicBufPush(body, 0x28);
+	leb128EncodeU(offset, body);
+	leb128EncodeU(align, body);
+}
+void wasmPushOpi64Load(DynamicBuf *body, i32 offset, i32 align)
+{
+	dynamicBufPush(body, 0x29);
+	leb128EncodeU(offset, body);
+	leb128EncodeU(align, body);
+}
+void wasmPushOpf32Load(DynamicBuf *body, i32 offset, i32 align)
+{
+	dynamicBufPush(body, 0x2A);
+	leb128EncodeU(offset, body);
+	leb128EncodeU(align, body);
+}
+void wasmPushOpf64Load(DynamicBuf *body, i32 offset, i32 align)
+{
+	dynamicBufPush(body, 0x2B);
+	leb128EncodeU(offset, body);
+	leb128EncodeU(align, body);
+}
+void wasmPushOpi32Load8s(DynamicBuf *body, i32 offset, i32 align)
+{
+	dynamicBufPush(body, 0x2C);
+	leb128EncodeU(offset, body);
+	leb128EncodeU(align, body);
+}
+void wasmPushOpi32Load8u(DynamicBuf *body, i32 offset, i32 align)
+{
+	dynamicBufPush(body, 0x2D);
+	leb128EncodeU(offset, body);
+	leb128EncodeU(align, body);
+}
+void wasmPushOpi32Load16s(DynamicBuf *body, i32 offset, i32 align)
+{
+	dynamicBufPush(body, 0x2E);
+	leb128EncodeU(offset, body);
+	leb128EncodeU(align, body);
+}
+void wasmPushOpi32Load16u(DynamicBuf *body, i32 offset, i32 align)
+{
+	dynamicBufPush(body, 0x2F);
+	leb128EncodeU(offset, body);
+	leb128EncodeU(align, body);
+}
+void wasmPushOpi64Load8s(DynamicBuf *body, i32 offset, i32 align)
+{
+	dynamicBufPush(body, 0x30);
+	leb128EncodeU(offset, body);
+	leb128EncodeU(align, body);
+}
+void wasmPushOpi64Load8u(DynamicBuf *body, i32 offset, i32 align)
+{
+	dynamicBufPush(body, 0x31);
+	leb128EncodeU(offset, body);
+	leb128EncodeU(align, body);
+}
+void wasmPushOpi64Load16s(DynamicBuf *body, i32 offset, i32 align)
+{
+	dynamicBufPush(body, 0x32);
+	leb128EncodeU(offset, body);
+	leb128EncodeU(align, body);
+}
+void wasmPushOpi64Load16u(DynamicBuf *body, i32 offset, i32 align)
+{
+	dynamicBufPush(body, 0x33);
+	leb128EncodeU(offset, body);
+	leb128EncodeU(align, body);
+}
+void wasmPushOpi64Load32s(DynamicBuf *body, i32 offset, i32 align)
+{
+	dynamicBufPush(body, 0x34);
+	leb128EncodeU(offset, body);
+	leb128EncodeU(align, body);
+}
+void wasmPushOpi64Load32u(DynamicBuf *body, i32 offset, i32 align)
+{
+	dynamicBufPush(body, 0x35);
+	leb128EncodeU(offset, body);
+	leb128EncodeU(align, body);
+}
+
+void wasmPushOpi32Store(DynamicBuf *body, i32 offset, i32 align)
+{
+	dynamicBufPush(body, 0x36);
+	leb128EncodeU(offset, body);
+	leb128EncodeU(align, body);
+}
+void wasmPushOpi64Store(DynamicBuf *body, i32 offset, i32 align)
+{
+	dynamicBufPush(body, 0x37);
+	leb128EncodeU(offset, body);
+	leb128EncodeU(align, body);
+}
+void wasmPushOpf32Store(DynamicBuf *body, i32 offset, i32 align)
+{
+	dynamicBufPush(body, 0x38);
+	leb128EncodeU(offset, body);
+	leb128EncodeU(align, body);
+}
+void wasmPushOpf64Store(DynamicBuf *body, i32 offset, i32 align)
+{
+	dynamicBufPush(body, 0x39);
+	leb128EncodeU(offset, body);
+	leb128EncodeU(align, body);
+}
+void wasmPushOpi32Store8(DynamicBuf *body, i32 offset, i32 align)
+{
+	dynamicBufPush(body, 0x3A);
+	leb128EncodeU(offset, body);
+	leb128EncodeU(align, body);
+}
+void wasmPushOpi32Store16(DynamicBuf *body, i32 offset, i32 align)
+{
+	dynamicBufPush(body, 0x3B);
+	leb128EncodeU(offset, body);
+	leb128EncodeU(align, body);
+}
+void wasmPushOpi64Store8(DynamicBuf *body, i32 offset, i32 align)
+{
+	dynamicBufPush(body, 0x3C);
+	leb128EncodeU(offset, body);
+	leb128EncodeU(align, body);
+}
+void wasmPushOpi64Store16(DynamicBuf *body, i32 offset, i32 align)
+{
+	dynamicBufPush(body, 0x3D);
+	leb128EncodeU(offset, body);
+	leb128EncodeU(align, body);
+}
+void wasmPushOpi64Store32(DynamicBuf *body, i32 offset, i32 align)
+{
+	dynamicBufPush(body, 0x3E);
+	leb128EncodeU(offset, body);
+	leb128EncodeU(align, body);
+}
+
+void wasmPushOpMemorySize(DynamicBuf *body) { dynamicBufPush(body, 0x3F); }
+void wasmPushOpMemoryGrow(DynamicBuf *body) { dynamicBufPush(body, 0x40); }
+
+void wasmPushOpi32Const(DynamicBuf *body, i32 value)
+{
+	dynamicBufPush(body, 0x41);
+	leb128EncodeU(value, body);
+}
+void wasmPushOpi64Const(DynamicBuf *body, i64 value)
+{
+	dynamicBufPush(body, 0x42);
+	leb128EncodeU(value, body);
+}
+void wasmPushOpf32Const(DynamicBuf *body, f32 value)
+{
+	dynamicBufPush(body, 0x43);
+	TODO("encode floats");
+}
+void wasmPushOpf64Const(DynamicBuf *body, f64 value)
+{
+	dynamicBufPush(body, 0x44);
+	TODO("encode floats");
 }

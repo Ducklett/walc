@@ -20,7 +20,7 @@ uint32_t leb128DecodeU(u8 *bytes)
 	return result;
 }
 
-void leb128EncodeU(uint32_t number, DynamicBuf *buf, int *byteCount)
+void leb128EncodeU(uint32_t number, DynamicBuf *buf)
 {
 	int n = 0;
 
@@ -37,8 +37,6 @@ void leb128EncodeU(uint32_t number, DynamicBuf *buf, int *byteCount)
 		n++;
 		if (i++ > 8) break;
 	} while (number != 0);
-
-	if (byteCount) *byteCount = n;
 }
 
 int leb128DecodeS(u8 *bytes)
@@ -62,7 +60,7 @@ int leb128DecodeS(u8 *bytes)
 	}
 }
 
-void leb128EncodeS(int number, DynamicBuf *buf, int *byteCount)
+void leb128EncodeS(int number, DynamicBuf *buf)
 {
 	const int maxBytes = 8;
 	int i;
@@ -83,8 +81,6 @@ void leb128EncodeS(int number, DynamicBuf *buf, int *byteCount)
 	}
 
 	assert((number == 0 || number == -1) && "Number should be fully consumed");
-
-	if (byteCount) *byteCount = i + 1;
 }
 
 #endif // LEB128_H
