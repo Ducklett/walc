@@ -1,32 +1,29 @@
-#include "src/stin.h"
+#define C_PROJECT_FILE
 
-int main(int argc, char **argv)
+#include "src/cpm.h"
+
+void run();
+void test();
+
+void cpm()
 {
-	char *command = NULL;
+	includeDir(STR("./"));
+	includeDir(STR("src"));
 
-	if (argc > 2) {
-	help:
-		printf("Usage: %s <command>\n", argv[0]);
-		printf("Available commands:\n");
-		printf("\ttest\n");
-		printf("\trun\n");
-		return;
-	}
+	setDefaultCommand(STR("run"));
+	addCommand(STR("run"), run);
+	addCommand(STR("test"), test);
+}
 
-	if (argc <= 1) {
-		command = "run";
-	} else {
-		command = argv[1];
-	}
+void run()
+{
+	//
+	compileAndRun(STR("./src/main.c"));
+}
 
-	if (!strcmp(command, "run")) {
-		system("tcc -run -I./ -Isrc .\\src\\main.c");
-	} else if (!strcmp(command, "test")) {
-		system("tcc -run -I./ -Itest -Isrc ./test/all.c");
-	} else {
-		printf("Unknown command %s\n", command);
-		goto help;
-	}
+void test()
+{
+	includeDir(STR("test"));
 
-	return 0;
+	compileAndRun(STR("./test/all.c"));
 }

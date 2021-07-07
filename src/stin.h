@@ -163,6 +163,14 @@ void stringAppend(String *b, Str content)
 	}
 }
 Str stringToStr(String b) { return (Str){.buf = b.buf, .len = b.len}; }
+// converts the string into a null terminated cstr
+// the null termination will be removed again when new data is appended
+char *stringToCStr(String *b)
+{
+	stringPush(b, '\0');
+	b->len--;
+	return b->buf;
+}
 void stringFree(String *b)
 {
 	free(b->buf);
