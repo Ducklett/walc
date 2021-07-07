@@ -130,6 +130,45 @@ void dynamicBufFree(DynamicBuf *b)
 	(*b) = (DynamicBuf){0};
 }
 
+typedef struct {
+	u8 *buf;
+	int len;
+	int capacity;
+} String;
+
+static inline String stringCreateWithCapacity(int capacity)
+{
+	return (String){.buf = smalloc(capacity), .capacity = capacity, .len = 0};
+}
+static inline String stringCreate() { return stringCreateWithCapacity(0); }
+void stringPush(String *b, u8 byte)
+{
+	bool shouldGrow = b->capacity == b->len;
+	if (shouldGrow) {
+		int newCapacity = b->capacity < 16 ? 16 : b->capacity * 2;
+		u8 *buf = smalloc(newCapacity);
+		if (b->capacity) {
+			memcpy(buf, b->buf, b->len);
+			free(b->buf);
+		}
+		b->buf = buf;
+		b->capacity = newCapacity;
+	}
+	b->buf[b->len++] = byte;
+}
+void stringAppend(String *b, Str content)
+{
+	for (int i = 0; i < content.len; i++) {
+		stringPush(b, content.buf[i]);
+	}
+}
+Str stringToStr(String b) { return (Str){.buf = b.buf, .len = b.len}; }
+void stringFree(String *b)
+{
+	free(b->buf);
+	(*b) = (String){0};
+}
+
 // in certain environments like during testing you might want to test if a panic happened
 // without actually quitting the application. this can be achieved by defining PANIC_SOFT
 #ifdef PANIC_SOFT

@@ -71,6 +71,31 @@ void test_sti_dynamicBuf()
 	}
 }
 
+void test_sti_string()
+{
+	test_section("sti string");
+
+	{
+		String str = stringCreate();
+
+		test("Newly created string is empty", str.len == 0);
+		test("Newly created buffer has zero capacity", str.capacity == 0);
+		stringPush(&str, 'H');
+		stringPush(&str, 'e');
+		stringPush(&str, 'l');
+		test("String capcity grows to the minimun amount", str.capacity == 16);
+		test("String length grows after pushing elements", str.len == 3);
+		test("Newly pushed elements have their expected values",
+			 str.buf[0] == 'H' AND str.buf[1] == 'e' AND str.buf[2] == 'l');
+
+		stringAppend(&str, STR("lo world this is a test"));
+		test("String capacity doubles when it runs out of space", str.capacity == 32);
+
+		Str expected = STR("Hello world this is a test");
+		test("DynamicBuf converted to Buf has the expected values", strEqual(stringToStr(str), expected));
+	}
+}
+
 void test_sti_panic()
 {
 	test_section("sti panic");
@@ -87,5 +112,6 @@ void test_sti()
 	test_sti_str();
 	test_sti_buf();
 	test_sti_dynamicBuf();
+	test_sti_string();
 	test_sti_panic();
 }
