@@ -11,12 +11,6 @@ Once the module is complete the *Compile() functions are used  to translate thes
 u8 wasmMagic[] = {0x00, 0x61, 0x73, 0x6D};
 u8 wasmModule[] = {0x01, 0x00, 0x00, 0x00};
 
-#define WasmType_Void 0x40
-#define WasmType_F64  0x7C
-#define WasmType_F32  0x7D
-#define WasmType_I64  0x7E
-#define WasmType_i32  0x7F
-
 typedef u8 WasmSection;
 #define WasmSection_Custom	  0x00
 #define WasmSection_Type	  0x01
@@ -37,7 +31,7 @@ typedef u8 WasmType;
 #define WasmType_F64  0x7C
 #define WasmType_F32  0x7D
 #define WasmType_I64  0x7E
-#define WasmType_i32  0x7F
+#define WasmType_I32  0x7F
 
 typedef u8 WasmOp;
 #define WasmOp_I32Const 0x41

@@ -49,7 +49,7 @@ void test_wasm_func()
 {
 	{
 		Wasm module = wasmModuleCreate();
-		u8 returns[] = {WasmType_i32};
+		u8 returns[] = {WasmType_I32};
 		u8 opcodes[] = {WasmOp_I32Const, 42};
 		wasmModuleAddFunction(&module, STREMPTY, BUFEMPTY, BUF(returns), BUFEMPTY, BUF(opcodes));
 		test("Single function produces a single function type", module.typeCount == 1);
@@ -63,7 +63,7 @@ void test_wasm_func()
 
 	{
 		Wasm module = wasmModuleCreate();
-		u8 returns[] = {WasmType_i32};
+		u8 returns[] = {WasmType_I32};
 		u8 opcodes[] = {WasmOp_I32Const, 42};
 		wasmModuleAddFunction(&module, STREMPTY, BUFEMPTY, BUF(returns), BUFEMPTY, BUF(opcodes));
 		wasmModuleAddFunction(&module, STREMPTY, BUFEMPTY, BUF(returns), BUFEMPTY, BUF(opcodes));
@@ -72,7 +72,7 @@ void test_wasm_func()
 
 	{
 		Wasm module = wasmModuleCreate();
-		u8 returns[] = {WasmType_i32};
+		u8 returns[] = {WasmType_I32};
 		u8 returns2[] = {WasmType_I64};
 		u8 opcodes[] = {WasmOp_I32Const, 42};
 		wasmModuleAddFunction(&module, STREMPTY, BUFEMPTY, BUF(returns), BUFEMPTY, BUF(opcodes));

@@ -1,5 +1,4 @@
-#include <binder.c>
-#include <wasm.c>
+#include <wasmEmitter.c>
 
 int main(int argc, char **argv)
 {
@@ -18,17 +17,9 @@ int main(int argc, char **argv)
 		WlBoundFunction fn = b.functions[i];
 		printf("%s%s %.*s(){}\n", fn.exported ? "export " : "", WlBTypeText[fn.returnType], STRPRINT(fn.name));
 	}
+
+	Buf wasm = emitWasm(&b);
+	fileWriteAllBytes("out.wasm", wasm) || PANIC("Failed to write wasm");
+
 	wlParserFree(&p);
-
-	// Wasm source = wasmModuleCreate();
-
-	// wasmModuleAddMemory(&source, STR("mem"), 1, 2);
-
-	// WasmType returns[] = {WasmType_i32};
-	// u8 opcodes[] = {WasmOp_I32Const, 10, WasmOp_I32Const, 20, WasmOp_I32Add};
-	// wasmModuleAddFunction(&source, STR("foo"), BUFEMPTY, BUF(returns), BUFEMPTY, BUF(opcodes));
-
-	// Buf wasm = wasmModuleCompile(source);
-
-	// fileWriteAllBytes("out.wasm", wasm) || PANIC("Failed to write wasm");
 }
