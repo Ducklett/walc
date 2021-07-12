@@ -4,7 +4,7 @@
 
 #include <sti_test.h>
 
-#include <lexer.c>
+#include <parser.c>
 
 void test_lex_individual_operator(Str op, WlKind expected)
 {

@@ -5,7 +5,7 @@
 #include <sti_test.h>
 
 #include <leb128.test.c>
-#include <lexer.test.c>
+#include <parser.test.c>
 #include <sti.test.c>
 #include <wasm.test.c>
 

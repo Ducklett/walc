@@ -1,16 +1,18 @@
-#include <lexer.c>
+#include <parser.c>
 #include <wasm.c>
 
 int main(int argc, char **argv)
 {
-	Str source = STR("export u0 add(i32 a, i32 b) { return a*a + b+1; }");
-	WlLexer l = wlLexerCreate(source);
-	wlLexerLexTokens(&l);
+	// Str source = STR("export u0 add(i32 a, i32 b) { return a*a + b+1; }");
+	Str source = STR("export u0 add() {} i32 another(){}");
+	WlParser p = wlParserCreate(source);
+	wlParse(&p);
 
-	for (int i = 0; i < l.tokenCount; i++) {
-		printf("%s\n", WlKindText[l.tokens[i].kind]);
+	for (int i = 0; i < p.topLevelCount; i++) {
+		wlPrint(p.topLevelDeclarations[i]);
+		// printf("%s\n", WlKindText[p.topLevelDeclarations[i].kind]);
 	}
-	wlLexerFree(&l);
+	wlParserFree(&p);
 
 	// Wasm source = wasmModuleCreate();
 

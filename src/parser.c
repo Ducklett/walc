@@ -3,6 +3,7 @@
 typedef enum
 {
 	WlKind_Bad,
+	WlKind_Missing,
 	WlKind_Symbol,
 	WlKind_Number,
 	WlKind_String,
@@ -44,11 +45,19 @@ typedef enum
 	WlKind_KwExtern,
 	WlKind_KwExport,
 	WlKind_Keywords_End,
+
+	WlKind_Syntax_Start,
+	WlKind_StFunction,
+	WlKind_StType,
+	WlKind_StBlock,
+	WlKind_StExpression,
+	WlKind_StExtern,
+	WlKind_Syntax_End,
 } WlKind;
 
 char *WlKindText[] = {
 	"<bad>",
-	// comment to make the formatter behave
+	"<missing>",
 	"<symbol>",
 	"<number>",
 	"<string>",
@@ -88,6 +97,11 @@ char *WlKindText[] = {
 	"extern",
 	"export",
 	"<keywords end>",
+
+	"<syntax start>",
+	"WlKind.Function",
+	"WlKind.Block",
+	"<syntax end>",
 };
 
 typedef struct {
@@ -95,6 +109,7 @@ typedef struct {
 	union {
 		int valueNum;
 		Str valueStr;
+		void *valuePtr;
 	};
 } WlToken;
 
@@ -281,4 +296,149 @@ void wlLexerLexTokens(WlLexer *lex)
 		}
 
 	} while (current);
+}
+
+typedef struct {
+	WlToken type;
+} WlSyntaxType;
+
+typedef struct {
+	WlToken curlyOpen;
+	WlToken curlyClose;
+} WlSyntaxBlock;
+
+typedef struct {
+	WlToken export;
+	WlToken type;
+	WlToken name;
+	WlToken parenOpen;
+	WlToken parenClose;
+	WlSyntaxBlock body;
+} WlSyntaxFunction;
+
+typedef struct {
+	WlLexer lexer;
+	WlToken *topLevelDeclarations;
+	int topLevelCount;
+	ArenaAllocator arena;
+	int index;
+} WlParser;
+
+WlParser wlParserCreate(Str source)
+{
+	WlLexer l = wlLexerCreate(source);
+	return (WlParser){
+		.lexer = l,
+		.topLevelDeclarations = malloc(sizeof(WlToken) * 0xFF),
+		.arena = arenaCreate(),
+		.index = 0,
+	};
+}
+
+WlToken wlParserCurrent(WlParser *p) { return p->lexer.tokens[p->index]; }
+WlToken wlParserMatch(WlParser *p, WlKind kind)
+{
+	WlToken t = wlParserCurrent(p);
+	p->index++;
+	if (t.kind != kind) {
+		printf("unexpected token %s, expected %s", WlKindText[t.kind], WlKindText[kind]);
+		TODO("Report diagnostic on mismatched token");
+	}
+	return t;
+}
+
+void wlParserAddTopLevelStatement(WlParser *p, WlToken tk)
+{
+	if (p->topLevelCount > 0xFF) TODO("Make top level count growable");
+	p->topLevelDeclarations[p->topLevelCount++] = tk;
+}
+
+WlSyntaxBlock wlParseBlock(WlParser *p)
+{
+	WlSyntaxBlock blk = {0};
+	blk.curlyOpen = wlParserMatch(p, WlKind_TkCurlyOpen);
+	blk.curlyClose = wlParserMatch(p, WlKind_TkCurlyClose);
+	return blk;
+}
+
+void wlParseFunction(WlParser *p)
+{
+	WlSyntaxFunction fn = {0};
+
+	if (wlParserCurrent(p).kind == WlKind_KwExport) {
+		fn.export = wlParserMatch(p, WlKind_KwExport);
+	}
+
+	fn.type = wlParserMatch(p, WlKind_Symbol);
+	fn.name = wlParserMatch(p, WlKind_Symbol);
+	fn.parenOpen = wlParserMatch(p, WlKind_TkParenOpen);
+	fn.parenClose = wlParserMatch(p, WlKind_TkParenClose);
+	fn.body = wlParseBlock(p);
+
+	WlSyntaxFunction *fnp = arenaMalloc(sizeof(WlSyntaxFunction), &p->arena);
+	*fnp = fn;
+	wlParserAddTopLevelStatement(p, (WlToken){.kind = WlKind_StFunction, .valuePtr = fnp});
+}
+
+void wlParse(WlParser *p)
+{
+	wlLexerLexTokens(&p->lexer);
+
+	// for (int i = 0; i < p->lexer.tokenCount; i++) {
+	// 	printf("%s\n", WlKindText[p->lexer.tokens[i].kind]);
+	// }
+
+	while (p->index != p->lexer.tokenCount) {
+		wlParseFunction(p);
+	}
+}
+
+WlParser wlParserFree(WlParser *p)
+{
+	arenaFree(&p->arena);
+	wlLexerFree(&p->lexer);
+	free(p->topLevelDeclarations);
+}
+
+void wlPrint(WlToken tk);
+
+void wlPrintBlock(WlSyntaxBlock blk)
+{
+	wlPrint(blk.curlyOpen);
+	printf("\n");
+	wlPrint(blk.curlyClose);
+	printf("\n");
+}
+
+void wlPrint(WlToken tk)
+{
+	if (tk.kind < WlKind_Syntax_Start) {
+		if (tk.kind == WlKind_Symbol) {
+			printf("%s::%.*s", WlKindText[tk.kind], STRPRINT(tk.valueStr));
+		} else if (tk.kind == WlKind_Number) {
+			printf("%s::%d", WlKindText[tk.kind], tk.valueNum);
+		} else {
+			printf("%s", WlKindText[tk.kind]);
+		}
+		return;
+	}
+
+	switch (tk.kind) {
+	case WlKind_StFunction: {
+		WlSyntaxFunction *fn = tk.valuePtr;
+		if (fn->export.kind == WlKind_KwExport) {
+			wlPrint(fn->export);
+			printf(" ");
+		}
+		wlPrint(fn->type);
+		printf(" ");
+		wlPrint(fn->name);
+		wlPrint(fn->parenOpen);
+		wlPrint(fn->parenClose);
+		printf(" ");
+		wlPrintBlock(fn->body);
+	} break;
+
+	default: TODO("Handle %s", WlKindText[tk.kind]); break;
+	}
 }
