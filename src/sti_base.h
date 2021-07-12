@@ -105,6 +105,24 @@ Str strAlloc(Str a)
 	return (Str){.buf = buf, .len = a.len};
 }
 
+// allocates formatted string
+Str strFormat(const char *fmt, ...)
+{
+	va_list args;
+	va_start(args, fmt);
+	int len = vsnprintf(NULL, 0, fmt, args);
+	va_end(args);
+	char *s = smalloc(len + 1);
+	s[len] = 0;
+	printf("len %d\n", len);
+
+	va_start(args, fmt);
+	vsnprintf(s, len, fmt, args);
+	va_end(args);
+
+	return (Str){s, len};
+}
+
 // frees a Str that was allocated on the heap
 void strFree(Str *b)
 {
