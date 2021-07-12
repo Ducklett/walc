@@ -1,16 +1,26 @@
+#include <lexer.c>
 #include <wasm.c>
 
 int main(int argc, char **argv)
 {
-	Wasm source = wasmModuleCreate();
+	Str source = STR("export u0 add(i32 a, i32 b) { return a*a + b+1; }");
+	WlLexer l = wlLexerCreate(source);
+	wlLexerLexTokens(&l);
 
-	wasmModuleAddMemory(&source, STR("mem"), 1, 2);
+	for (int i = 0; i < l.tokenCount; i++) {
+		printf("%s\n", WlKindText[l.tokens[i].kind]);
+	}
+	wlLexerFree(&l);
 
-	WasmType returns[] = {WasmType_i32};
-	u8 opcodes[] = {WasmOp_I32Const, 10, WasmOp_I32Const, 20, WasmOp_I32Add};
-	wasmModuleAddFunction(&source, STR("foo"), BUFEMPTY, BUF(returns), BUFEMPTY, BUF(opcodes));
+	// Wasm source = wasmModuleCreate();
 
-	Buf wasm = wasmModuleCompile(source);
+	// wasmModuleAddMemory(&source, STR("mem"), 1, 2);
 
-	fileWriteAllBytes("out.wasm", wasm) || PANIC("Failed to write wasm");
+	// WasmType returns[] = {WasmType_i32};
+	// u8 opcodes[] = {WasmOp_I32Const, 10, WasmOp_I32Const, 20, WasmOp_I32Add};
+	// wasmModuleAddFunction(&source, STR("foo"), BUFEMPTY, BUF(returns), BUFEMPTY, BUF(opcodes));
+
+	// Buf wasm = wasmModuleCompile(source);
+
+	// fileWriteAllBytes("out.wasm", wasm) || PANIC("Failed to write wasm");
 }

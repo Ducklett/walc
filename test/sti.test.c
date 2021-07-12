@@ -137,16 +137,6 @@ void test_sti_string()
 	}
 }
 
-void test_sti_panic()
-{
-	test_section("sti panic");
-
-	test("didPanic is false if we haven't called panic", didPanic == false);
-	PANIC("panic test");
-	test("didPanic is true after we called panic", didPanic == true);
-	test("didPanic gets cleared after running a test", didPanic == false);
-}
-
 void test_sti_arena()
 {
 	test_section("sti arena");
@@ -183,6 +173,5 @@ void test_sti()
 	test_sti_buf();
 	test_sti_dynamicBuf();
 	test_sti_string();
-	test_sti_panic();
 	test_sti_arena();
 }

@@ -37,13 +37,13 @@ void test_wasm_memory()
 		test("Module with memory produces the correct bytecode", bufEqual(BUF(expectedBytes), wasm));
 	}
 
-	{
-		Wasm module = wasmModuleCreate();
+	// {
+	// Wasm module = wasmModuleCreate();
 
-		wasmModuleAddMemory(&module, STR("foo"), 1, 2);
-		wasmModuleAddMemory(&module, STR("bar"), 3, 4);
-		test("Application will panic when adding memory a second time", didPanic);
-	}
+	// wasmModuleAddMemory(&module, STR("foo"), 1, 2);
+	// wasmModuleAddMemory(&module, STR("bar"), 3, 4);
+	// test("Application will panic when adding memory a second time", didPanic);
+	// }
 }
 void test_wasm_func()
 {

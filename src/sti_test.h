@@ -1,7 +1,6 @@
 #ifndef STITEST_H
 #define STITEST_H
 
-#define PANIC_SOFT
 #include <sti_base.h>
 
 #ifdef __cplusplus
@@ -42,7 +41,6 @@ static void test_internal(const char *msg, bool pass)
 		testFail++;
 		printf("\33[031m[FAIL]\33[0m %s\n", msg);
 	}
-	didPanic = false;
 }
 void test(const char *msg, bool pass)
 {

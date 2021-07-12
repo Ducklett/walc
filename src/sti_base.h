@@ -114,7 +114,6 @@ Str strFormat(const char *fmt, ...)
 	va_end(args);
 	char *s = smalloc(len + 1);
 	s[len] = 0;
-	printf("len %d\n", len);
 
 	va_start(args, fmt);
 	vsnprintf(s, len, fmt, args);
@@ -242,19 +241,10 @@ void stringFree(String *b)
 	(*b) = (String){0};
 }
 
-// in certain environments like during testing you might want to test if a panic happened
-// without actually quitting the application. this can be achieved by defining PANIC_SOFT
-#ifdef PANIC_SOFT
-static bool didPanic = false;
-#endif
 // prints the provided message and then kills the program
 // always returns {false} so it can be used in binary expressions: {doThis() || panic("Failed")}
 bool panic_impl(const char *msg, const char *filename, const int line, ...)
 {
-#ifdef PANIC_SOFT
-	didPanic = true;
-	return false;
-#else
 	printf("%s%s %d PANIC: %s", TERMRED, filename, line, TERMCLEAR);
 	va_list args;
 	va_start(args, line);
@@ -264,7 +254,6 @@ bool panic_impl(const char *msg, const char *filename, const int line, ...)
 	printf("\n");
 	exit(1);
 	return false;
-#endif
 }
 
 #define PANIC(msg, ...) panic_impl(msg, __FILE__, __LINE__, ##__VA_ARGS__)

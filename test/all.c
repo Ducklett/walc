@@ -5,6 +5,7 @@
 #include <sti_test.h>
 
 #include <leb128.test.c>
+#include <lexer.test.c>
 #include <sti.test.c>
 #include <wasm.test.c>
 
@@ -13,4 +14,5 @@ void test_main()
 	test_sti();
 	test_leb128();
 	test_wasm();
+	test_lexer();
 }
