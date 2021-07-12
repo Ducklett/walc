@@ -299,10 +299,6 @@ void wlLexerLexTokens(WlLexer *lex)
 }
 
 typedef struct {
-	WlToken type;
-} WlSyntaxType;
-
-typedef struct {
 	WlToken curlyOpen;
 	WlToken curlyClose;
 } WlSyntaxBlock;

@@ -1,4 +1,4 @@
-#include <parser.c>
+#include <binder.c>
 #include <wasm.c>
 
 int main(int argc, char **argv)
@@ -8,9 +8,15 @@ int main(int argc, char **argv)
 	WlParser p = wlParserCreate(source);
 	wlParse(&p);
 
+	WlBinder b = wlBind(p.topLevelDeclarations, p.topLevelCount);
+
 	for (int i = 0; i < p.topLevelCount; i++) {
 		wlPrint(p.topLevelDeclarations[i]);
-		// printf("%s\n", WlKindText[p.topLevelDeclarations[i].kind]);
+	}
+
+	for (int i = 0; i < b.functionCount; i++) {
+		WlBoundFunction fn = b.functions[i];
+		printf("%s%s %.*s(){}\n", fn.exported ? "export " : "", WlBTypeText[fn.returnType], STRPRINT(fn.name));
 	}
 	wlParserFree(&p);
 
