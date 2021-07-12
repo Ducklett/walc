@@ -3,7 +3,7 @@
 #endif
 
 #include <leb128.h>
-#include <test.h>
+#include <sti_test.h>
 
 void signed_numbers_under_64_encode_as_themselves()
 {

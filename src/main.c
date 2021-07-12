@@ -1,4 +1,3 @@
-#include <stin.h>
 #include <wasm.c>
 
 int main(int argc, char **argv)

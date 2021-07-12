@@ -2,7 +2,7 @@
 #define TEST_ENTRYPOINT test_main
 #endif
 
-#include <test.h>
+#include <sti_test.h>
 
 #include <leb128.test.c>
 #include <sti.test.c>

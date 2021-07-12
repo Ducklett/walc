@@ -2,7 +2,7 @@
 #define TEST_ENTRYPOINT test_wasm
 #endif
 
-#include <test.h>
+#include <sti_test.h>
 #include <wasm.c>
 
 void test_wasm_empty_module()

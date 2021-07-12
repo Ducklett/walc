@@ -6,7 +6,7 @@ Once the module is complete the *Compile() functions are used  to translate thes
 */
 
 #include <leb128.h>
-#include <stin.h>
+#include <sti_base.h>
 
 u8 wasmMagic[] = {0x00, 0x61, 0x73, 0x6D};
 u8 wasmModule[] = {0x01, 0x00, 0x00, 0x00};

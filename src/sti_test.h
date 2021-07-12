@@ -1,7 +1,12 @@
-#ifndef TEST_H
-#define TEST_H
+#ifndef STITEST_H
+#define STITEST_H
 
 #define PANIC_SOFT
+#include <sti_base.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 // for readability
 
@@ -9,8 +14,6 @@
 #define NOTEQUAL !=
 #define OR		 ||
 #define AND		 &&
-
-#include <stin.h>
 
 static int test_pass;
 static int test_fail;
@@ -33,7 +36,7 @@ void test(const char *msg, bool pass)
 
 void TEST_ENTRYPOINT();
 
-void main()
+int main()
 {
 	printf("==============\n");
 	TEST_ENTRYPOINT();
@@ -50,6 +53,13 @@ void main()
 	}
 	if (test_fail) {
 		printf("\33[031m%d %s failed\33[0m\n", test_fail, TESTPLUR(test_fail));
+		return 1;
 	}
+	return 0;
+}
+
+#ifdef __cplusplus
 }
 #endif
+
+#endif // STITEST_H

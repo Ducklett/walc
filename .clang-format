@@ -17,8 +17,9 @@ BinPackArguments: 'true'
 BinPackParameters: 'true'
 BreakBeforeBraces: Custom
 BraceWrapping:
+    AfterEnum: true
+    AfterExternBlock: false
     AfterFunction: true
-    AfterExternBlock: true
 
 BreakBeforeTernaryOperators: 'true'
 ColumnLimit: '120'

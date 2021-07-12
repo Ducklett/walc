@@ -1,10 +1,14 @@
 /*
-STIN: The standard interface library
+STI: The standard interface library
 
 Provides some essentials to make working with C less of a pain
 */
 #ifndef STI_H
 #define STI_H
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #include "stdarg.h"
 #include <assert.h>
@@ -14,6 +18,22 @@ Provides some essentials to make working with C less of a pain
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+typedef uint8_t u8;
+typedef uint16_t u16;
+typedef uint32_t u32;
+typedef uint64_t u64;
+typedef int8_t i8;
+typedef int16_t i16;
+typedef int32_t i32;
+typedef int64_t i64;
+typedef float f32;
+typedef double f64;
+
+#define ABS(a)				 ((a) < 0 ? (-a) : (a))
+#define min(a, b)			 ((a) < (b) ? (a) : (b))
+#define max(a, b)			 ((a) > (b) ? (a) : (b))
+#define clamp(v, minv, maxv) min(maxv, max(minv, v))
 
 #define TERMCLEAR		"\033[0m"
 #define TERMRED			"\033[0;31m"
@@ -30,26 +50,30 @@ Provides some essentials to make working with C less of a pain
 #define TERMBOLDMAGENTA "\033[1;35m"
 #define TERMBOLDCYAN	"\033[1;36m"
 
-typedef uint8_t u8;
-typedef uint16_t u16;
-typedef uint32_t u32;
-typedef uint64_t u64;
-typedef int8_t i8;
-typedef int16_t i16;
-typedef int32_t i32;
-typedef int64_t i64;
-typedef float f32;
-typedef double f64;
-
 void *smalloc(size_t size);
 
+// A string encdoded as a character buffer and a length
+// The str may or may not be null terminated depending on how it was created
+// The null terminator is not included in the string lenght
 typedef struct {
 	char *buf;
 	size_t len;
 } Str;
-#define STR(x)	 ((Str){x, sizeof(x) - 1})
-#define STREMPTY ((Str){0, 0})
 
+// creates {Str} from a string literal
+#define STR(x) ((Str){x, sizeof(x) - 1})
+
+// makes is so you can print a string in one go with %.*s
+#define STRPRINT(x) ((int)(x.len)), (x.buf)
+
+// an empty {Str}
+const Str STREMPTY = {0};
+
+// creates {Str} from a null terminated {char*}
+// if NULL is passed to it an empty Str is returned
+Str strFromCstr(char *s) { return (Str){s, s == NULL ? 0 : strlen(s)}; }
+
+// returns {true} if the two strings a equal
 bool strEqual(Str a, Str b)
 {
 	if (a.len != b.len) return false;
@@ -59,6 +83,29 @@ bool strEqual(Str a, Str b)
 	return true;
 }
 
+// creates a string view from the specified range
+// the range is clamped if it would fall outside of the parent Str's bounds
+// the returned {Str} is *not* null terminated
+// and the parent Str {a} must be kept alive while the slice is used
+Str strSlice(Str a, int from, int len)
+{
+	int clampedFrom = clamp(from, 0, a.len);
+	// if {from} was shifted forward the length should shink accordingly
+	len += (from - clampedFrom);
+	int clampedLen = min(a.len - clampedFrom, len);
+	return (Str){a.buf + clampedFrom, clampedLen};
+}
+
+// copies the Str onto the heap and adds a null terminator to the end
+Str strAlloc(Str a)
+{
+	char *buf = smalloc(a.len + 1);
+	memcpy(buf, a.buf, a.len);
+	buf[a.len] = '\0';
+	return (Str){.buf = buf, .len = a.len};
+}
+
+// frees a Str that was allocated on the heap
 void strFree(Str *b)
 {
 	free(b->buf);
@@ -131,7 +178,7 @@ void dynamicBufFree(DynamicBuf *b)
 }
 
 typedef struct {
-	u8 *buf;
+	char *buf;
 	int len;
 	int capacity;
 } String;
@@ -141,12 +188,12 @@ static inline String stringCreateWithCapacity(int capacity)
 	return (String){.buf = smalloc(capacity), .capacity = capacity, .len = 0};
 }
 static inline String stringCreate() { return stringCreateWithCapacity(0); }
-void stringPush(String *b, u8 byte)
+void stringPush(String *b, char byte)
 {
 	bool shouldGrow = b->capacity == b->len;
 	if (shouldGrow) {
 		int newCapacity = b->capacity < 16 ? 16 : b->capacity * 2;
-		u8 *buf = smalloc(newCapacity);
+		char *buf = smalloc(newCapacity);
 		if (b->capacity) {
 			memcpy(buf, b->buf, b->len);
 			free(b->buf);
@@ -239,4 +286,71 @@ bool fileWriteAllBytes(const char *filename, const Buf buffer)
 	return true;
 }
 
+const size_t arenaPageSize = 0xFFFF;
+
+typedef struct arena_page_t {
+	void *memory;
+	size_t capacity;
+	size_t length;
+	struct arena_page_t *next;
+} ArenaPage;
+
+typedef struct {
+	ArenaPage *first;
+	ArenaPage *current;
+} ArenaAllocator;
+
+ArenaPage *arenaCreatePageWithCapacity(size_t capacity)
+{
+	ArenaPage *memory = smalloc(capacity);
+
+	memory[0] = (ArenaPage){memory, capacity, sizeof(ArenaPage), NULL};
+	return memory;
+}
+
+ArenaPage *arenaCreatePage() { return arenaCreatePageWithCapacity(arenaPageSize); }
+
+ArenaAllocator arenaCreate()
+{
+	ArenaPage *p = arenaCreatePage();
+	return (ArenaAllocator){p, p};
+}
+
+void *arenaMalloc(size_t bytes, ArenaAllocator *alloc)
+{
+	ArenaPage *currentPage = alloc->current;
+
+	size_t availableSpace = currentPage->capacity - currentPage->length;
+	if (availableSpace < bytes) {
+		size_t pageSize = max(arenaPageSize, bytes + sizeof(ArenaPage));
+		ArenaPage *newPage = arenaCreatePageWithCapacity(pageSize);
+		alloc->current = newPage;
+		currentPage->next = newPage;
+		currentPage = newPage;
+	}
+
+	void *offset = ((u8 *)currentPage->memory) + currentPage->length;
+	currentPage->length += bytes;
+	return offset;
+}
+
+void arenaFree(ArenaAllocator *alloc)
+{
+	ArenaPage *page = alloc->first;
+
+	int i = 0;
+	while (page) {
+		ArenaPage *nextPage = page->next;
+		free(page);
+		page = nextPage;
+		i++;
+	}
+	alloc->current = NULL;
+	alloc->first = NULL;
+}
+
+#ifdef __cplusplus
+}
 #endif
+
+#endif // STI_H

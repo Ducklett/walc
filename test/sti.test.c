@@ -1,9 +1,18 @@
 #ifndef TEST_ENTRYPOINT
-#define TEST_ENTRYPOINT test_wasm
+#define TEST_ENTRYPOINT test_sti
 #endif
 
-#include <string.h>
-#include <test.h>
+#include <sti_test.h>
+
+void test_sti_math()
+{
+	test_section("sti math");
+
+	test("min returns the minimum value", min(10, 20) == 10 AND min(-1, 1) == -1 AND min(.33, 1.93) == .33);
+	test("max returns the maximum value", max(10, 20) == 20 AND max(-1, 1) == 1 AND max(.33, 1.93) == 1.93);
+	test("clamp constrains value to boundry",
+		 clamp(11, 10, 20) == 11 AND clamp(9, 10, 20) == 10 AND clamp(24, 10, 20) == 20);
+}
 
 void test_sti_str()
 {
@@ -14,7 +23,33 @@ void test_sti_str()
 	test("str buffer is equal to its string counterpart", strncmp(STR("Foo").buf, "Foo", 3) == 0);
 	test("String with no characters is equal to STREMPTY", strEqual(STR(""), STREMPTY));
 	test("Strings with the same characters are equal", strEqual(STR("Hello"), STR("Hello")));
+	test("strFromCstr and STR produce the same result for string literals",
+		 strEqual(STR("Hello"), strFromCstr("Hello")));
+	test("strFromCstr returns an empty Str when given a null pointer", strEqual(STREMPTY, strFromCstr(NULL)));
+
 	test("Strings with different characters are not equal", NOT strEqual(STR("Hello"), STR("Goodbye")));
+
+	{
+		//                0   4 6             20
+		//                v   v v             v
+		Str source = STR("Hello world this is a test");
+		test("Slice returns the expected value when given a legal range",
+			 strEqual(STR("Hello"), strSlice(source, 0, 5)));
+		test("Slice is clamped when from is too short", strEqual(STR("Hello"), strSlice(source, -1, 6)));
+		test("Slice is clamped when from is too long", strEqual(STREMPTY, strSlice(source, 999, 1)));
+		test("Slice is clamped when len is too long", strEqual(STR("a test"), strSlice(source, 20, 999)));
+	}
+
+	{
+		Str source = STR("Hello world!");
+		Str name = strSlice(source, 0, 5); // not null terminated!
+
+		Str nameCopy = strAlloc(name);
+		test("strings created with strAlloc are null terminated", nameCopy.buf[nameCopy.len] == '\0');
+
+		strFree(&nameCopy);
+		test("Str's become empty after you strFree() them", strEqual(nameCopy, STREMPTY));
+	}
 }
 
 void test_sti_buf()
@@ -68,6 +103,9 @@ void test_sti_dynamicBuf()
 
 		u8 expected[] = {10, 20, 30, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18};
 		test("DynamicBuf converted to Buf has the expected values", bufEqual(dynamicBufToBuf(buf), BUF(expected)));
+
+		dynamicBufFree(&buf);
+		test("DynmicBuf's become empty after you dynamicBufFree() them", bufEqual(dynamicBufToBuf(buf), BUFEMPTY));
 	}
 }
 
@@ -92,7 +130,10 @@ void test_sti_string()
 		test("String capacity doubles when it runs out of space", str.capacity == 32);
 
 		Str expected = STR("Hello world this is a test");
-		test("DynamicBuf converted to Buf has the expected values", strEqual(stringToStr(str), expected));
+		test("String converted to Str has the expected values", strEqual(stringToStr(str), expected));
+
+		stringFree(&str);
+		test("strings become empty after you stringFree() them", strEqual(stringToStr(str), STREMPTY));
 	}
 }
 
@@ -106,12 +147,42 @@ void test_sti_panic()
 	test("didPanic gets cleared after running a test", didPanic == false);
 }
 
+void test_sti_arena()
+{
+	test_section("sti arena");
+	ArenaAllocator allocator = arenaCreate();
+	test("new areana will have one page", allocator.current != NULL && allocator.current == allocator.first);
+
+	int *addr;
+	int *initialAddr;
+	addr = arenaMalloc(sizeof(int), &allocator);
+	initialAddr = addr;
+	*addr = 10;
+	addr = arenaMalloc(sizeof(int), &allocator);
+	*addr = 20;
+	addr = arenaMalloc(sizeof(int), &allocator);
+	*addr = 30;
+
+	test("arena allocates values in page contiguously",
+		 initialAddr[0] == 10 && initialAddr[1] == 20 && initialAddr[2] == 30);
+
+	addr = arenaMalloc(0xAFFFF, &allocator);
+
+	test("arena allocates a bigger page is the payload wouldn't fit",
+		 allocator.first != allocator.current AND allocator.current->capacity >= 0xAFFFF);
+
+	arenaFree(&allocator);
+	test("all memory in an arena can be freed at once", allocator.first == NULL && allocator.current == NULL);
+}
+
 void test_sti()
 {
 	test_section("sti");
+	test_sti_math();
 	test_sti_str();
 	test_sti_buf();
 	test_sti_dynamicBuf();
 	test_sti_string();
 	test_sti_panic();
+	test_sti_arena();
 }
