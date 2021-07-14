@@ -36,13 +36,35 @@ WlBType wlBindType(WlToken tk)
 
 typedef enum
 {
-	WlBKind_Function
+	WlBKind_None,
+	WlBKind_Function,
+	WlBKind_Block,
+	WlBKind_Call,
+	WlBKind_StringLiteral,
 } WlBKind;
+
+typedef struct {
+	WlBKind kind;
+	union {
+		void *data;
+		Str dataStr;
+	};
+} WlbNode;
+
+typedef struct {
+	WlbNode arg;
+} WlBoundCallExpression;
+
+typedef struct {
+	WlbNode *nodes;
+	int nodeCount;
+} WlBoundBlock;
 
 typedef struct {
 	bool exported;
 	WlBType returnType;
 	Str name;
+	WlbNode body;
 } WlBoundFunction;
 
 typedef struct {
@@ -51,7 +73,45 @@ typedef struct {
 
 	WlBoundFunction *functions;
 	int functionCount;
+	ArenaAllocator arena;
 } WlBinder;
+
+WlbNode wlBindStatement(WlBinder *b, WlToken statement)
+{
+	assert(statement.kind == WlKind_StExpressionStatement);
+
+	WlExpressionStatement ex = *(WlExpressionStatement *)statement.valuePtr;
+	assert(ex.expression.kind == WlKind_StCall);
+	WlSyntaxCall call = *(WlSyntaxCall *)ex.expression.valuePtr;
+
+	WlBoundCallExpression bcall = {0};
+	if (call.arg.kind == WlKind_String) {
+		bcall.arg = (WlbNode){.kind = WlBKind_StringLiteral, .dataStr = call.arg.valueStr};
+	} else {
+		bcall.arg = (WlbNode){.kind = WlKind_Missing, .data = NULL};
+	}
+
+	WlBoundCallExpression *bcallp = arenaMalloc(sizeof(WlBoundCallExpression), &b->arena);
+	*bcallp = bcall;
+
+	return (WlbNode){.kind = WlBKind_Call, .data = bcallp};
+}
+
+WlbNode wlBindBlock(WlBinder *b, WlSyntaxBlock body)
+{
+	WlBoundBlock blk = {0};
+	blk.nodeCount = body.statementCount;
+	size_t foo = sizeof(WlbNode) * blk.nodeCount;
+	WlbNode *nodes = arenaMalloc(foo, &b->arena);
+	for (int i = 0; i < body.statementCount; i++) {
+		nodes[i] = wlBindStatement(b, body.statements[i]);
+	}
+	blk.nodes = nodes;
+	WlBoundBlock *blkp = arenaMalloc(sizeof(WlBoundBlock), &b->arena);
+	*blkp = blk;
+
+	return (WlbNode){.kind = WlBKind_Block, .data = blkp};
+}
 
 WlBinder wlBind(WlToken *declarations, int declarationCount)
 {
@@ -60,6 +120,7 @@ WlBinder wlBind(WlToken *declarations, int declarationCount)
 		.unboundCount = declarationCount,
 		.functions = smalloc(sizeof(WlBoundFunction) * 0xFF),
 		.functionCount = 0,
+		.arena = arenaCreate(),
 	};
 
 	for (int i = 0; i < declarationCount; i++) {
@@ -74,6 +135,7 @@ WlBinder wlBind(WlToken *declarations, int declarationCount)
 			.exported = fn.export.kind == WlKind_KwExport,
 			.returnType = wlBindType(fn.type),
 			.name = fn.name.valueStr,
+			.body = wlBindBlock(&b, fn.body),
 		};
 	}
 

@@ -152,7 +152,8 @@ static int wasmModuleFindOrCreateFuncType(Wasm *module, Buf args, Buf rets)
 
 // adds a new import to the module
 // the provided buffers shouldn't be freed until you are done with the {Wasm} object
-void wasmModuleAddImport(Wasm *module, Str name, Buf args, Buf rets)
+// returns the function id
+int wasmModuleAddImport(Wasm *module, Str name, Buf args, Buf rets)
 {
 	int id = module->funcCount++;
 	int typeIndex = wasmModuleFindOrCreateFuncType(module, args, rets);
@@ -162,6 +163,7 @@ void wasmModuleAddImport(Wasm *module, Str name, Buf args, Buf rets)
 		.typeIndex = module->typeCount - 1,
 		.name = name,
 	};
+	return id;
 }
 
 // adds a new function to the module

@@ -19,9 +19,14 @@ Buf emitWasm(WlBinder *b)
 {
 	Wasm source = wasmModuleCreate();
 
-	// wasmModuleAddMemory(&source, STR("mem"), 1, 2);
+	wasmModuleAddMemory(&source, STR("memory"), 1, 2);
 
-	for (int i = 0; i < b->unboundCount; i++) {
+	u8 args[] = {WasmType_I32, WasmType_I32};
+
+	// import print (hardcoded for now)
+	int fnPrint = wasmModuleAddImport(&source, STR("print"), BUF(args), BUFEMPTY);
+
+	for (int i = 0; i < b->functionCount; i++) {
 		WlBoundFunction fn = b->functions[i];
 
 		Buf args = BUFEMPTY;
@@ -32,11 +37,24 @@ Buf emitWasm(WlBinder *b)
 		Buf locals = BUFEMPTY;
 		DynamicBuf opcodes = dynamicBufCreate();
 
-		// hack, remove this later
-		switch (returnType) {
-		case WasmType_I32: wasmPushOpi32Const(&opcodes, 43); break;
-		case WasmType_I64: wasmPushOpi64Const(&opcodes, 75); break;
-		default: break;
+		WlbNode bodyNode = fn.body;
+		WlBoundBlock body = *(WlBoundBlock *)bodyNode.data;
+		for (int j = 0; j < body.nodeCount; j++) {
+			WlbNode statementNode = body.nodes[j];
+			assert(statementNode.kind == WlBKind_Call);
+			WlBoundCallExpression call = *(WlBoundCallExpression *)statementNode.data;
+			WlbNode arg = call.arg;
+			if (arg.kind == WlBKind_StringLiteral) {
+				int offset = wasmModuleAddData(&source, STRTOBUF(arg.dataStr));
+				int length = arg.dataStr.len;
+				printf("str dims %d %d\n", offset, length);
+				wasmPushOpi32Const(&opcodes, offset);
+				wasmPushOpi32Const(&opcodes, length);
+				wasmPushOpCall(&opcodes, fnPrint);
+			} else {
+				printf("arg kind %d\n", arg.kind);
+				PANIC("Print expects a string");
+			}
 		}
 
 		wasmModuleAddFunction(&source, fn.exported ? fn.name : STREMPTY, args, dynamicBufToBuf(rets), locals,

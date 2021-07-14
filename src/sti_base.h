@@ -293,6 +293,21 @@ bool fileWriteAllBytes(const char *filename, const Buf buffer)
 	return true;
 }
 
+bool fileReadAllText(const char *filename, Str *data)
+{
+	FILE *fp = fopen(filename, "rb+");
+	if (!fp) return false;
+	fseek(fp, 0, SEEK_END);
+	int len = ftell(fp);
+	fseek(fp, 0, SEEK_SET);
+	char *buf = smalloc(sizeof(char) * (len + 1));
+	fread(buf, 1, len, fp);
+	data->buf = buf;
+	data->len = len;
+	fclose(fp);
+	return true;
+}
+
 const size_t arenaPageSize = 0xFFFF;
 
 typedef struct arena_page_t {

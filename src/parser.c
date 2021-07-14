@@ -48,6 +48,8 @@ typedef enum
 
 	WlKind_Syntax_Start,
 	WlKind_StFunction,
+	WlKind_StExpressionStatement,
+	WlKind_StCall,
 	WlKind_StType,
 	WlKind_StBlock,
 	WlKind_StExpression,
@@ -120,7 +122,7 @@ typedef struct {
 	int tokenCount;
 } WlLexer;
 
-bool isWhitespace(char c) { return c == ' ' || c == '\t' || c == '\r' == c == '\n'; }
+bool isWhitespace(char c) { return c == ' ' || c == '\t' || c == '\r' || c == '\n'; }
 bool isDigit(char c) { return c >= '0' && c <= '9'; }
 bool isBinaryDigit(char c) { return c == '0' || c == '1'; }
 bool isHexDigit(char c) { return isDigit(c) || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f'); }
@@ -205,6 +207,21 @@ void wlLexerLexTokens(WlLexer *lex)
 		case '}': wlLexerPushBasic(lex, 1, WlKind_TkCurlyClose); break;
 		case ',': wlLexerPushBasic(lex, 1, WlKind_TkComma); break;
 		case ';': wlLexerPushBasic(lex, 1, WlKind_TkSemicolon); break;
+		case '"': {
+			lex->index++;
+			int start = lex->index;
+
+			while (wlLexerCurrent(lex) != NULL && wlLexerCurrent(lex) != '"')
+				lex->index++;
+
+			if (wlLexerCurrent(lex) == NULL) {
+				PANIC("unexpected EOF, expected '\"'");
+			}
+			Str value = strSlice(lex->source, start, lex->index - start);
+			lex->index++;
+
+			lex->tokens[lex->tokenCount++] = (WlToken){.kind = WlKind_String, .valueStr = value};
+		} break;
 		case '0':
 		case '1':
 		case '2':
@@ -288,7 +305,6 @@ void wlLexerLexTokens(WlLexer *lex)
 				// printf("sym: %.*s\n", STRPRINT(symbolName));
 				lex->tokens[lex->tokenCount++] = (WlToken){.kind = WlKind_Symbol, .valueStr = symbolName};
 			} else {
-				// PANIC("Unexpected character '%c'", current);
 				lex->index++;
 				lex->tokens[lex->tokenCount++] = (WlToken){.kind = WlKind_Bad};
 			}
@@ -299,7 +315,21 @@ void wlLexerLexTokens(WlLexer *lex)
 }
 
 typedef struct {
+	WlToken expression;
+	WlToken semicolon;
+} WlExpressionStatement;
+
+typedef struct {
+	WlToken name;
+	WlToken parenOpen;
+	WlToken arg;
+	WlToken parenClose;
+} WlSyntaxCall;
+
+typedef struct {
 	WlToken curlyOpen;
+	WlToken *statements;
+	int statementCount;
 	WlToken curlyClose;
 } WlSyntaxBlock;
 
@@ -349,10 +379,43 @@ void wlParserAddTopLevelStatement(WlParser *p, WlToken tk)
 	p->topLevelDeclarations[p->topLevelCount++] = tk;
 }
 
+WlToken wlParseExpression(WlParser *p)
+{
+	WlSyntaxCall call = {0};
+	call.name = wlParserMatch(p, WlKind_Symbol);
+	call.parenOpen = wlParserMatch(p, WlKind_TkParenOpen);
+	if (wlParserCurrent(p).kind != WlKind_TkParenClose) {
+		call.arg = wlParserMatch(p, WlKind_String);
+	} else {
+		call.arg = (WlToken){.kind = WlKind_Missing};
+	}
+	call.parenClose = wlParserMatch(p, WlKind_TkParenClose);
+
+	WlSyntaxCall *callp = arenaMalloc(sizeof(WlSyntaxCall), &p->arena);
+	*callp = call;
+
+	return (WlToken){.kind = WlKind_StCall, .valuePtr = callp};
+}
+
+WlToken wlParseStatement(WlParser *p)
+{
+	WlExpressionStatement st = {0};
+	st.expression = wlParseExpression(p);
+	st.semicolon = wlParserMatch(p, WlKind_TkSemicolon);
+	WlExpressionStatement *stp = arenaMalloc(sizeof(WlExpressionStatement), &p->arena);
+	*stp = st;
+	return (WlToken){.kind = WlKind_StExpressionStatement, .valuePtr = stp};
+}
+
 WlSyntaxBlock wlParseBlock(WlParser *p)
 {
 	WlSyntaxBlock blk = {0};
 	blk.curlyOpen = wlParserMatch(p, WlKind_TkCurlyOpen);
+	blk.statements = malloc(sizeof(WlToken) * 0xFF);
+	while (wlParserCurrent(p).kind != WlKind_TkCurlyClose) {
+		blk.statements[blk.statementCount++] = wlParseStatement(p);
+	}
+
 	blk.curlyClose = wlParserMatch(p, WlKind_TkCurlyClose);
 	return blk;
 }
@@ -380,9 +443,9 @@ void wlParse(WlParser *p)
 {
 	wlLexerLexTokens(&p->lexer);
 
-	// for (int i = 0; i < p->lexer.tokenCount; i++) {
-	// 	printf("%s\n", WlKindText[p->lexer.tokens[i].kind]);
-	// }
+	for (int i = 0; i < p->lexer.tokenCount; i++) {
+		printf("%s\n", WlKindText[p->lexer.tokens[i].kind]);
+	}
 
 	while (p->index != p->lexer.tokenCount) {
 		wlParseFunction(p);
@@ -402,6 +465,19 @@ void wlPrintBlock(WlSyntaxBlock blk)
 {
 	wlPrint(blk.curlyOpen);
 	printf("\n");
+	for (int i = 0; i < blk.statementCount; i++) {
+		WlToken st = blk.statements[i];
+		assert(st.kind == WlKind_StExpressionStatement);
+		WlExpressionStatement ex = *(WlExpressionStatement *)st.valuePtr;
+		assert(ex.expression.kind == WlKind_StCall);
+		WlSyntaxCall call = *(WlSyntaxCall *)ex.expression.valuePtr;
+		wlPrint(call.name);
+		wlPrint(call.parenOpen);
+		wlPrint(call.arg);
+		wlPrint(call.parenClose);
+		wlPrint(ex.semicolon);
+		printf("\n");
+	}
 	wlPrint(blk.curlyClose);
 	printf("\n");
 }
@@ -409,7 +485,9 @@ void wlPrintBlock(WlSyntaxBlock blk)
 void wlPrint(WlToken tk)
 {
 	if (tk.kind < WlKind_Syntax_Start) {
-		if (tk.kind == WlKind_Symbol) {
+		if (tk.kind == WlKind_String) {
+			printf("%s::\"%.*s\"", WlKindText[tk.kind], STRPRINT(tk.valueStr));
+		} else if (tk.kind == WlKind_Symbol) {
 			printf("%s::%.*s", WlKindText[tk.kind], STRPRINT(tk.valueStr));
 		} else if (tk.kind == WlKind_Number) {
 			printf("%s::%d", WlKindText[tk.kind], tk.valueNum);

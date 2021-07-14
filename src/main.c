@@ -2,8 +2,11 @@
 
 int main(int argc, char **argv)
 {
-	// Str source = STR("export u0 add(i32 a, i32 b) { return a*a + b+1; }");
-	Str source = STR("export u0 add() {} i32 another(){}");
+	Str source;
+	fileReadAllText("examples/01_helloworld.wl", &source) || PANIC("Failed to open file");
+
+	printf("source %.*s\n", STRPRINT(source));
+
 	WlParser p = wlParserCreate(source);
 	wlParse(&p);
 
