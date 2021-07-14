@@ -78,9 +78,17 @@ typedef struct {
 } WasmMemory;
 
 typedef struct {
+	int offset;
+	Buf data;
+} WasmData;
+
+typedef struct {
 	bool hasMemory;
 	WasmMemory memory;
 	WasmFuncType *types;
+	WasmData *data;
+	int dataCount;
+	int dataOffset;
 	int typeCount;
 	WasmFunc *bodies;
 	int bodyCount;
@@ -97,6 +105,7 @@ Wasm wasmModuleCreate()
 	Wasm module = {
 		.bodies = malloc(sizeof(WasmFunc *) * 0xFF),
 		.types = malloc(sizeof(WasmFuncType *) * 0xFF),
+		.data = malloc(sizeof(WasmData *) * 0xFF),
 		0,
 	};
 
@@ -115,6 +124,20 @@ void wasmModuleAddMemory(Wasm *module, Str name, int pages, int maxPages)
 		.pages = pages,
 		.maxPages = maxPages,
 	};
+}
+
+// adds data to the module and returns its offset
+// you must also add memory to the wasm module if data is set
+int wasmModuleAddData(Wasm *module, Buf data)
+{
+	int offset = module->dataOffset;
+	module->data[module->dataCount++] = (WasmData){
+		.offset = offset,
+		.data = data,
+	};
+
+	module->dataOffset += data.len;
+	return offset;
 }
 
 static int wasmModuleFindOrCreateFuncType(Wasm *module, Buf args, Buf rets)
@@ -155,6 +178,9 @@ void wasmAppendSection(DynamicBuf *destination, WasmSection section, Buf section
 	leb128EncodeU(sectionContent.len, destination);
 	dynamicBufAppend(destination, sectionContent);
 }
+
+void wasmPushOpi32Const(DynamicBuf *body, i32 value);
+void wasmPushOpEnd(DynamicBuf *body);
 
 Buf wasmModuleCompile(Wasm module)
 {
@@ -252,6 +278,25 @@ Buf wasmModuleCompile(Wasm module)
 
 		wasmAppendSection(&bytecode, WasmSection_Code, dynamicBufToBuf(bodyBuf));
 		dynamicBufFree(&bodyBuf);
+	}
+
+	if (module.dataCount) {
+		DynamicBuf dataBuf = dynamicBufCreateWithCapacity(0xFF);
+
+		leb128EncodeU(module.dataCount, &dataBuf);
+
+		for (int i = 0; i < module.dataCount; i++) {
+			WasmData data = module.data[i];
+			dynamicBufPush(&dataBuf, 0 /*mode active memory 0*/);
+			wasmPushOpi32Const(&dataBuf, data.offset);
+			wasmPushOpEnd(&dataBuf);
+
+			leb128EncodeU(data.data.len, &dataBuf);
+			dynamicBufAppend(&dataBuf, data.data);
+		}
+
+		wasmAppendSection(&bytecode, WasmSection_Data, dynamicBufToBuf(dataBuf));
+		dynamicBufFree(&dataBuf);
 	}
 
 	return dynamicBufToBuf(bytecode);

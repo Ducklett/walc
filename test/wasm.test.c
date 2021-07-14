@@ -81,10 +81,39 @@ void test_wasm_func()
 	}
 }
 
+void test_wasm_data()
+{
+	{
+		Wasm module = wasmModuleCreate();
+		wasmModuleAddMemory(&module, STREMPTY, 1, 1);
+
+		test("Data count is empty for new module", module.dataCount == 0);
+		test("Data offset is empty for new module", module.dataOffset == 0);
+
+		Str msg1 = STR("hello");
+		Str msg2 = STR("world");
+		int msg1Offset = wasmModuleAddData(&module, STRTOBUF(msg1));
+
+		test("the first data is added at offset 0", msg1Offset == 0);
+
+		int msg2Offset = wasmModuleAddData(&module, STRTOBUF(msg2));
+		test("the second data is appended after the first", msg2Offset >= msg1.len);
+
+		test("data count matches the amount of data sections pushed", module.dataCount == 2);
+
+		Buf bytecode = wasmModuleCompile(module);
+		u8 expected[] = {0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00, 0x05, 0x04, 0x01, 0x01, 0x01,
+						 0x01, 0x0B, 0x15, 0x02, 0x00, 0x41, 0x00, 0x0B, 0x05, 0x68, 0x65, 0x6C, 0x6C,
+						 0x6F, 0x00, 0x41, 0x05, 0x0B, 0x05, 0x77, 0x6F, 0x72, 0x6C, 0x64};
+		test("data produces the correct bytecode", bufEqual(bytecode, BUF(expected)));
+	}
+}
+
 void test_wasm()
 {
 	test_section("Wasm");
 	test_wasm_empty_module();
 	test_wasm_memory();
 	test_wasm_func();
+	test_wasm_data();
 }
