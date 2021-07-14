@@ -67,8 +67,7 @@ typedef struct {
 typedef struct {
 	int id;
 	int typeIndex;
-	Str *path;
-	int pathCount;
+	Str name;
 } WasmImport;
 
 typedef struct {
@@ -103,6 +102,7 @@ Wasm wasmModuleCreate()
 {
 	// TODO: grow these when they run out of space
 	Wasm module = {
+		.imports = malloc(sizeof(WasmImport *) * 0xFF),
 		.bodies = malloc(sizeof(WasmFunc *) * 0xFF),
 		.types = malloc(sizeof(WasmFuncType *) * 0xFF),
 		.data = malloc(sizeof(WasmData *) * 0xFF),
@@ -150,16 +150,29 @@ static int wasmModuleFindOrCreateFuncType(Wasm *module, Buf args, Buf rets)
 	return module->typeCount - 1;
 }
 
+// adds a new import to the module
+// the provided buffers shouldn't be freed until you are done with the {Wasm} object
+void wasmModuleAddImport(Wasm *module, Str name, Buf args, Buf rets)
+{
+	int id = module->funcCount++;
+	int typeIndex = wasmModuleFindOrCreateFuncType(module, args, rets);
+
+	module->imports[module->importCount++] = (WasmImport){
+		.id = id,
+		.typeIndex = module->typeCount - 1,
+		.name = name,
+	};
+}
+
 // adds a new function to the module
 // the provided buffers shouldn't be freed until you are done with the {Wasm} object
 void wasmModuleAddFunction(Wasm *module, Str name, Buf args, Buf rets, Buf locals, Buf opcodes)
 {
 	if (name.len != 0) module->exportCount++;
 
-	int id = module->bodyCount;
+	int id = module->funcCount++;
 	int typeIndex = wasmModuleFindOrCreateFuncType(module, args, rets);
-	module->bodyCount++;
-	module->bodies[id] = (WasmFunc){
+	module->bodies[module->bodyCount++] = (WasmFunc){
 		.id = id,
 		.typeIndex = module->typeCount - 1,
 		.name = name,
@@ -208,6 +221,30 @@ Buf wasmModuleCompile(Wasm module)
 
 		wasmAppendSection(&bytecode, WasmSection_Type, dynamicBufToBuf(typeBuf));
 		dynamicBufFree(&typeBuf);
+	}
+
+	if (module.importCount) {
+
+		Str namespace = STR("env");
+
+		DynamicBuf importBuf = dynamicBufCreateWithCapacity(0xFF);
+		leb128EncodeU(module.importCount, &importBuf);
+
+		for (int i = 0; i < module.importCount; i++) {
+
+			leb128EncodeU(namespace.len, &importBuf);
+			dynamicBufAppend(&importBuf, STRTOBUF(namespace));
+
+			leb128EncodeU(module.imports[i].name.len, &importBuf);
+			dynamicBufAppend(&importBuf, STRTOBUF(module.imports[i].name));
+
+			// TODO: also support importing of memory, tables, globals..
+			dynamicBufPush(&importBuf, 0x00); // adds function
+			leb128EncodeU(module.imports[i].typeIndex, &importBuf);
+		}
+
+		wasmAppendSection(&bytecode, WasmSection_Import, dynamicBufToBuf(importBuf));
+		dynamicBufFree(&importBuf);
 	}
 
 	if (module.bodyCount) {

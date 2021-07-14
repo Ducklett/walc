@@ -81,6 +81,31 @@ void test_wasm_func()
 	}
 }
 
+void test_wasm_import()
+{
+	{
+		Wasm module = wasmModuleCreate();
+
+		test("Function count is 0 for an empty module", module.funcCount == 0);
+		test("Import count is 0 for an empty module", module.importCount == 0);
+
+		u8 argsValues[] = {WasmType_I32, WasmType_I32};
+		Buf args = BUF(argsValues);
+		Buf rets = BUFEMPTY;
+		wasmModuleAddImport(&module, STR("print"), args, rets);
+
+		test("Function count increments when adding an import", module.funcCount == 1);
+		test("Import count increments when adding an import", module.importCount == 1);
+
+		Buf bytecode = wasmModuleCompile(module);
+		u8 expectedBytecode[] = {0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00, 0x01, 0x06, 0x01,
+								 0x60, 0x02, 0x7F, 0x7F, 0x00, 0x02, 0x0D, 0x01, 0x03, 0x65, 0x6E,
+								 0x76, 0x05, 0x70, 0x72, 0x69, 0x6E, 0x74, 0x00, 0x00};
+
+		test("Single import produces the correct bytecode", bufEqual(bytecode, BUF(expectedBytecode)));
+	}
+}
+
 void test_wasm_data()
 {
 	{
@@ -114,6 +139,7 @@ void test_wasm()
 	test_section("Wasm");
 	test_wasm_empty_module();
 	test_wasm_memory();
+	test_wasm_import();
 	test_wasm_func();
 	test_wasm_data();
 }
