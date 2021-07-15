@@ -202,16 +202,20 @@ typedef struct {
 	int capacity;
 } ListHead;
 
-void listAlloc(void **lp, int size);
+void listEnsureCapacity(void **lp, int size);
 #define List(T)			   T *
 #define listNew()		   NULL
 #define LISTHEAD(l)		   (l == NULL ? NULL : (ListHead *)(((u8 *)(l)) - sizeof(ListHead)))
 #define listElementSize(l) sizeof(*l)
 #define listLen(l)		   ((l) == NULL ? 0 : LISTHEAD(l)->len)
+#define listIsEmpty(l)	   (listLen(l) == 0)
+#define listIsNotEmpty(l)  (listLen(l) >= 1)
 #define listCapacity(l)	   ((l) == NULL ? 0 : LISTHEAD(l)->capacity)
-#define listPush(lp, v)                   \
-	listEnsureCapacity(lp, sizeof(**lp)); \
-	(*(lp))[LISTHEAD(*(lp))->len++] = v;
+// pushes {v} onto the end of the list and returns {v}
+#define listPush(lp, v) (listEnsureCapacity(lp, sizeof(**lp)), (*(lp))[LISTHEAD(*(lp))->len++] = v, v)
+// pops value off the end of the list and returns it
+#define listPop(lp)	 (listLen(*(lp)) == 0 ? PANIC("Popping and empty stack") : (*(lp))[--LISTHEAD(*(lp))->len])
+#define listFree(lp) (free(LISTHEAD(*(lp))), *(lp) = NULL)
 
 void listEnsureCapacity(void **lp, int size)
 {

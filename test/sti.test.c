@@ -118,6 +118,8 @@ void test_sti_list()
 	test_that("New list is zero initialized");
 	{
 		test_assert("New list is empty", listLen(numList) == 0);
+		test_assert("listIsEmpty is true for empty list", listIsEmpty(numList));
+		test_assert("listIsNotEmpty is false for empty list", !listIsNotEmpty(numList));
 		test_assert("New list has no capacity", listCapacity(numList) == 0);
 		test_assert("List knows element size", listElementSize(numList) == sizeof(int));
 	}
@@ -127,13 +129,15 @@ void test_sti_list()
 		listPush(&numList, 10);
 
 		test_assert("The list length becomes 1", listLen(numList) == 1);
+		test_assert("listIsEmpty is false for non-empty list", !listIsEmpty(numList));
+		test_assert("listIsNotEmpty is true for non-empty list", listIsNotEmpty(numList));
 		test_assert("The value can be retrieved with []", numList[0] == 10);
 		test_assert("The list capacity becomes the minimum", listCapacity(numList) == 0x10);
 	}
 
 	test_that("Additional elements can be added to the list");
 	{
-		for (int i = 1; i < 23; i++) {
+		for (int i = 2; i <= 23; i++) {
 			listPush(&numList, i);
 		}
 
@@ -141,8 +145,25 @@ void test_sti_list()
 		test_assert("Capacity doubles when you run out", listCapacity(numList) == 0x20);
 
 		for (int i = 1; i < 23; i++) {
-			test_assert(strFormat("list[%d]==%d", i, i).buf, numList[i] == i);
+			test_assert(strFormat("list[%d]==%d+1", i, i).buf, numList[i] == i + 1);
 		}
+	}
+
+	test_that("List pop");
+	{
+		test_assert("Returns last item", listPop(&numList) == 23);
+		test_assert("Decrements list length", listLen(numList) == 22);
+
+		List(u8) emptyList = listNew();
+		test_assert_panic("Panics when popping an empty list", listPop(&emptyList));
+	}
+
+	test_that("List can be freed");
+	{
+		listFree(&numList);
+		test_assert("List becomes NULL", numList == NULL);
+		test_assert("Length becomes 0", listLen(numList) == 0);
+		test_assert("Capacity becomes 0", listCapacity(numList) == 0);
 	}
 }
 
