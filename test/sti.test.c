@@ -109,6 +109,43 @@ void test_sti_dynamicBuf()
 	}
 }
 
+void test_sti_list()
+{
+	test_section("sti list");
+
+	List(int) numList = listNew();
+
+	test_that("New list is zero initialized");
+	{
+		test_assert("New list is empty", listLen(numList) == 0);
+		test_assert("New list has no capacity", listCapacity(numList) == 0);
+		test_assert("List knows element size", listElementSize(numList) == sizeof(int));
+	}
+
+	test_that("An element can be pushed into a list");
+	{
+		listPush(&numList, 10);
+
+		test_assert("The list length becomes 1", listLen(numList) == 1);
+		test_assert("The value can be retrieved with []", numList[0] == 10);
+		test_assert("The list capacity becomes the minimum", listCapacity(numList) == 0x10);
+	}
+
+	test_that("Additional elements can be added to the list");
+	{
+		for (int i = 1; i < 23; i++) {
+			listPush(&numList, i);
+		}
+
+		test_assert("List length becomes 23", listLen(numList) == 23);
+		test_assert("Capacity doubles when you run out", listCapacity(numList) == 0x20);
+
+		for (int i = 1; i < 23; i++) {
+			test_assert(strFormat("list[%d]==%d", i, i).buf, numList[i] == i);
+		}
+	}
+}
+
 void test_sti_string()
 {
 	test_section("sti string");
@@ -172,6 +209,7 @@ void test_sti()
 	test_sti_str();
 	test_sti_buf();
 	test_sti_dynamicBuf();
+	test_sti_list();
 	test_sti_string();
 	test_sti_arena();
 }

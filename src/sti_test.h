@@ -14,15 +14,19 @@ extern "C" {
 #define OR		 ||
 #define AND		 &&
 
+static Str testPrefix;
 static int testPass;
 static int testFail;
 static const char *current_test;
 static const char *current_test_error;
+static bool testSkipSection = false;
 
 static void test_internal(const char *msg, bool pass);
 
 static void complete_current_test()
 {
+	if (testSkipSection) return;
+
 	if (current_test) {
 		test_internal(current_test, current_test_error == NULL);
 		if (current_test_error) printf("\t%sassert failed: %s %s\n", TERMRED, current_test_error, TERMCLEAR);
@@ -31,9 +35,15 @@ static void complete_current_test()
 	current_test_error = NULL;
 }
 
-void test_section(const char *name) { printf("#      %s\n", name); }
+void test_section(const char *name)
+{
+	testSkipSection = !strStartsWith(strFromCstr(name), testPrefix);
+
+	if (!testSkipSection) printf("#      %s\n", name);
+}
 static void test_internal(const char *msg, bool pass)
 {
+	if (testSkipSection) return;
 	if (pass) {
 		testPass++;
 		printf("\33[032m[PASS]\33[0m %s\n", msg);
@@ -51,6 +61,7 @@ void test(const char *msg, bool pass)
 
 void test_that(const char *msg)
 {
+	if (testSkipSection) return;
 	complete_current_test();
 	current_test = msg;
 	current_test_error = NULL;
@@ -65,10 +76,13 @@ void test_assert(const char *msg, bool pass)
 
 void TEST_ENTRYPOINT();
 
-int main()
+int main(int argc, char **argv)
 {
+	if (argc > 1) testPrefix = strFromCstr(argv[1]);
+
 	printf("==============\n");
 	TEST_ENTRYPOINT();
+	testSkipSection = false;
 	complete_current_test();
 	printf("==============\n");
 	int test_ran = testPass + testFail;

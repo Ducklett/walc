@@ -55,7 +55,9 @@ void compileAndRunS(Str entrypoint)
 	if (remainingArgc) {
 		stringAppend(&command, STR(" "));
 		for (int i = 0; i < remainingArgc; i++) {
+			stringPush(&command, '"');
 			stringAppend(&command, strFromCstr(remainingArgv[i]));
+			stringPush(&command, '"');
 			stringAppend(&command, STR(" "));
 		}
 	}

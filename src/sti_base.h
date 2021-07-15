@@ -71,7 +71,7 @@ const Str STREMPTY = {0};
 
 // creates {Str} from a null terminated {char*}
 // if NULL is passed to it an empty Str is returned
-Str strFromCstr(char *s) { return (Str){s, s == NULL ? 0 : strlen(s)}; }
+Str strFromCstr(const char *s) { return (Str){(char *)s, s == NULL ? 0 : strlen(s)}; }
 
 // returns {true} if the two strings a equal
 bool strEqual(Str a, Str b)
@@ -95,6 +95,9 @@ Str strSlice(Str a, int from, int len)
 	int clampedLen = min(a.len - clampedFrom, len);
 	return (Str){a.buf + clampedFrom, clampedLen};
 }
+
+// returns {true}  if {str} starts with {prefix}
+bool strStartsWith(Str str, Str prefix) { return strEqual(strSlice(str, 0, prefix.len), prefix); }
 
 // copies the Str onto the heap and adds a null terminator to the end
 Str strAlloc(Str a)
@@ -192,6 +195,36 @@ void dynamicBufFree(DynamicBuf *b)
 {
 	free(b->buf);
 	(*b) = (DynamicBuf){0};
+}
+
+typedef struct {
+	int len;
+	int capacity;
+} ListHead;
+
+void listAlloc(void **lp, int size);
+#define List(T)			   T *
+#define listNew()		   NULL
+#define LISTHEAD(l)		   (l == NULL ? NULL : (ListHead *)(((u8 *)(l)) - sizeof(ListHead)))
+#define listElementSize(l) sizeof(*l)
+#define listLen(l)		   ((l) == NULL ? 0 : LISTHEAD(l)->len)
+#define listCapacity(l)	   ((l) == NULL ? 0 : LISTHEAD(l)->capacity)
+#define listPush(lp, v)                   \
+	listEnsureCapacity(lp, sizeof(**lp)); \
+	(*(lp))[LISTHEAD(*(lp))->len++] = v;
+
+void listEnsureCapacity(void **lp, int size)
+{
+	if (listCapacity(*lp) == 0 || listLen(*lp) + 1 >= listCapacity(*lp)) {
+		int newCapacity = max(0x10, listCapacity(*lp) * 2);
+		ListHead *headPtr = malloc((newCapacity * size) + sizeof(ListHead));
+		*headPtr = (ListHead){.len = listLen(*lp), .capacity = newCapacity};
+
+		void *newL = ((u8 *)headPtr) + sizeof(ListHead);
+		memcpy(newL, *lp, listCapacity(*lp) * size);
+		free(LISTHEAD(*lp));
+		*lp = newL;
+	}
 }
 
 typedef struct {
