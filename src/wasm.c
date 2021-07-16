@@ -84,28 +84,23 @@ typedef struct {
 typedef struct {
 	bool hasMemory;
 	WasmMemory memory;
-	WasmFuncType *types;
-	WasmData *data;
-	int dataCount;
-	int dataOffset;
-	int typeCount;
-	WasmFunc *bodies;
-	int bodyCount;
-	WasmImport *imports;
-	int importCount;
-	int exportCount;
+	List(WasmFuncType) types;
+	List(WasmData) data;
+	List(WasmFunc) bodies;
+	List(WasmImport) imports;
 
+	int dataOffset;
+	int exportCount;
 	int funcCount;
 } Wasm;
 
 Wasm wasmModuleCreate()
 {
-	// TODO: grow these when they run out of space
 	Wasm module = {
-		.imports = malloc(sizeof(WasmImport *) * 0xFF),
-		.bodies = malloc(sizeof(WasmFunc *) * 0xFF),
-		.types = malloc(sizeof(WasmFuncType *) * 0xFF),
-		.data = malloc(sizeof(WasmData *) * 0xFF),
+		.imports = listNew(),
+		.bodies = listNew(),
+		.types = listNew(),
+		.data = listNew(),
 		0,
 	};
 
@@ -131,23 +126,26 @@ void wasmModuleAddMemory(Wasm *module, Str name, int pages, int maxPages)
 int wasmModuleAddData(Wasm *module, Buf data)
 {
 	int offset = module->dataOffset;
-	module->data[module->dataCount++] = (WasmData){
+	WasmData d = {
 		.offset = offset,
 		.data = data,
 	};
-
+	listPush(&module->data, d);
 	module->dataOffset += data.len;
+
 	return offset;
 }
 
 static int wasmModuleFindOrCreateFuncType(Wasm *module, Buf args, Buf rets)
 {
-	for (int i = 0; i < module->typeCount; i++) {
+	int typeCount = listLen(module->types);
+	for (int i = 0; i < typeCount; i++) {
 		WasmFuncType t = module->types[i];
 		if (bufEqual((Buf){t.params, t.paramCount}, args) && bufEqual((Buf){t.returns, t.returnCount}, rets)) return i;
 	}
-	module->types[module->typeCount++] = (WasmFuncType){args.len, args.buf, rets.len, rets.buf};
-	return module->typeCount - 1;
+	WasmFuncType t = {args.len, args.buf, rets.len, rets.buf};
+	listPush(&module->types, t);
+	return typeCount;
 }
 
 // adds a new import to the module
@@ -157,12 +155,12 @@ int wasmModuleAddImport(Wasm *module, Str name, Buf args, Buf rets)
 {
 	int id = module->funcCount++;
 	int typeIndex = wasmModuleFindOrCreateFuncType(module, args, rets);
-
-	module->imports[module->importCount++] = (WasmImport){
+	WasmImport im = {
 		.id = id,
-		.typeIndex = module->typeCount - 1,
+		.typeIndex = typeIndex,
 		.name = name,
 	};
+	listPush(&module->imports, im);
 	return id;
 }
 
@@ -174,15 +172,16 @@ void wasmModuleAddFunction(Wasm *module, Str name, Buf args, Buf rets, Buf local
 
 	int id = module->funcCount++;
 	int typeIndex = wasmModuleFindOrCreateFuncType(module, args, rets);
-	module->bodies[module->bodyCount++] = (WasmFunc){
+	WasmFunc fun = {
 		.id = id,
-		.typeIndex = module->typeCount - 1,
+		.typeIndex = typeIndex,
 		.name = name,
 		.locals = locals.buf,
 		.localsCount = locals.len,
 		.opcodes = opcodes.buf,
 		.opcodesCount = opcodes.len,
 	};
+	listPush(&module->bodies, fun);
 }
 
 static inline u8 *wasmReserveByte(DynamicBuf *buf) { return buf->buf + buf->len++; }
@@ -203,10 +202,11 @@ Buf wasmModuleCompile(Wasm module)
 	dynamicBufAppend(&bytecode, BUF(wasmMagic));
 	dynamicBufAppend(&bytecode, BUF(wasmModule));
 
-	if (module.typeCount) {
+	int typeCount = listLen(module.types);
+	if (typeCount) {
 		DynamicBuf typeBuf = dynamicBufCreateWithCapacity(0xFF);
-		leb128EncodeU(module.typeCount, &typeBuf);
-		for (int i = 0; i < module.typeCount; i++) {
+		leb128EncodeU(typeCount, &typeBuf);
+		for (int i = 0; i < typeCount; i++) {
 			WasmFuncType functype = module.types[i];
 
 			dynamicBufPush(&typeBuf, 0x60);
@@ -225,14 +225,15 @@ Buf wasmModuleCompile(Wasm module)
 		dynamicBufFree(&typeBuf);
 	}
 
-	if (module.importCount) {
+	int importCount = listLen(module.imports);
+	if (importCount) {
 
 		Str namespace = STR("env");
 
 		DynamicBuf importBuf = dynamicBufCreateWithCapacity(0xFF);
-		leb128EncodeU(module.importCount, &importBuf);
+		leb128EncodeU(importCount, &importBuf);
 
-		for (int i = 0; i < module.importCount; i++) {
+		for (int i = 0; i < importCount; i++) {
 
 			leb128EncodeU(namespace.len, &importBuf);
 			dynamicBufAppend(&importBuf, STRTOBUF(namespace));
@@ -249,11 +250,12 @@ Buf wasmModuleCompile(Wasm module)
 		dynamicBufFree(&importBuf);
 	}
 
-	if (module.bodyCount) {
+	int bodyCount = listLen(module.bodies);
+	if (bodyCount) {
 		DynamicBuf bodyBuf = dynamicBufCreateWithCapacity(0xFF);
-		leb128EncodeU(module.bodyCount, &bodyBuf);
+		leb128EncodeU(bodyCount, &bodyBuf);
 
-		for (int i = 0; i < module.bodyCount; i++) {
+		for (int i = 0; i < bodyCount; i++) {
 			leb128EncodeU(module.bodies[i].typeIndex, &bodyBuf);
 		}
 
@@ -286,7 +288,7 @@ Buf wasmModuleCompile(Wasm module)
 			dynamicBufPush(&exportBuf, 0x00);
 		}
 
-		for (int i = 0; i < module.bodyCount; i++) {
+		for (int i = 0; i < bodyCount; i++) {
 			WasmFunc body = module.bodies[i];
 			if (body.name.len == 0) continue;
 
@@ -300,12 +302,12 @@ Buf wasmModuleCompile(Wasm module)
 		dynamicBufFree(&exportBuf);
 	}
 
-	if (module.bodyCount) {
+	if (bodyCount) {
 		DynamicBuf bodyBuf = dynamicBufCreateWithCapacity(0xFF);
 
-		leb128EncodeU(module.bodyCount, &bodyBuf);
+		leb128EncodeU(bodyCount, &bodyBuf);
 
-		for (int i = 0; i < module.bodyCount; i++) {
+		for (int i = 0; i < bodyCount; i++) {
 			WasmFunc body = module.bodies[i];
 			int bodyLen = 1 + /*locals*/ 1 + body.opcodesCount;
 			leb128EncodeU(bodyLen, &bodyBuf);
@@ -319,12 +321,13 @@ Buf wasmModuleCompile(Wasm module)
 		dynamicBufFree(&bodyBuf);
 	}
 
-	if (module.dataCount) {
+	int dataCount = listLen(module.data);
+	if (dataCount) {
 		DynamicBuf dataBuf = dynamicBufCreateWithCapacity(0xFF);
 
-		leb128EncodeU(module.dataCount, &dataBuf);
+		leb128EncodeU(dataCount, &dataBuf);
 
-		for (int i = 0; i < module.dataCount; i++) {
+		for (int i = 0; i < dataCount; i++) {
 			WasmData data = module.data[i];
 			dynamicBufPush(&dataBuf, 0 /*mode active memory 0*/);
 			wasmPushOpi32Const(&dataBuf, data.offset);

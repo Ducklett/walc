@@ -52,7 +52,7 @@ void test_wasm_func()
 		u8 returns[] = {WasmType_I32};
 		u8 opcodes[] = {WasmOp_I32Const, 42};
 		wasmModuleAddFunction(&module, STREMPTY, BUFEMPTY, BUF(returns), BUFEMPTY, BUF(opcodes));
-		test("Single function produces a single function type", module.typeCount == 1);
+		test("Single function produces a single function type", listLen(module.types) == 1);
 
 		Buf bytecode = wasmModuleCompile(module);
 		u8 expectedBytecode[] = {0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00, 0x01, 0x05, 0x01, 0x60, 0x00, 0x01,
@@ -67,7 +67,7 @@ void test_wasm_func()
 		u8 opcodes[] = {WasmOp_I32Const, 42};
 		wasmModuleAddFunction(&module, STREMPTY, BUFEMPTY, BUF(returns), BUFEMPTY, BUF(opcodes));
 		wasmModuleAddFunction(&module, STREMPTY, BUFEMPTY, BUF(returns), BUFEMPTY, BUF(opcodes));
-		test("Two functions of the same type share a function type", module.typeCount == 1);
+		test("Two functions of the same type share a function type", listLen(module.types) == 1);
 	}
 
 	{
@@ -77,7 +77,7 @@ void test_wasm_func()
 		u8 opcodes[] = {WasmOp_I32Const, 42};
 		wasmModuleAddFunction(&module, STREMPTY, BUFEMPTY, BUF(returns), BUFEMPTY, BUF(opcodes));
 		wasmModuleAddFunction(&module, STREMPTY, BUFEMPTY, BUF(returns2), BUFEMPTY, BUF(opcodes));
-		test("Two functions of different types get their own function type", module.typeCount == 2);
+		test("Two functions of different types get their own function type", listLen(module.types) == 2);
 	}
 }
 
@@ -87,7 +87,7 @@ void test_wasm_import()
 		Wasm module = wasmModuleCreate();
 
 		test("Function count is 0 for an empty module", module.funcCount == 0);
-		test("Import count is 0 for an empty module", module.importCount == 0);
+		test("Import count is 0 for an empty module", listLen(module.imports) == 0);
 
 		u8 argsValues[] = {WasmType_I32, WasmType_I32};
 		Buf args = BUF(argsValues);
@@ -95,7 +95,7 @@ void test_wasm_import()
 		wasmModuleAddImport(&module, STR("print"), args, rets);
 
 		test("Function count increments when adding an import", module.funcCount == 1);
-		test("Import count increments when adding an import", module.importCount == 1);
+		test("Import count increments when adding an import", listLen(module.imports) == 1);
 
 		Buf bytecode = wasmModuleCompile(module);
 		u8 expectedBytecode[] = {0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00, 0x01, 0x06, 0x01,
@@ -112,7 +112,7 @@ void test_wasm_data()
 		Wasm module = wasmModuleCreate();
 		wasmModuleAddMemory(&module, STREMPTY, 1, 1);
 
-		test("Data count is empty for new module", module.dataCount == 0);
+		test("Data count is empty for new module", listLen(module.data) == 0);
 		test("Data offset is empty for new module", module.dataOffset == 0);
 
 		Str msg1 = STR("hello");
@@ -124,7 +124,7 @@ void test_wasm_data()
 		int msg2Offset = wasmModuleAddData(&module, STRTOBUF(msg2));
 		test("the second data is appended after the first", msg2Offset >= msg1.len);
 
-		test("data count matches the amount of data sections pushed", module.dataCount == 2);
+		test("data count matches the amount of data sections pushed", listLen(module.data) == 2);
 
 		Buf bytecode = wasmModuleCompile(module);
 		u8 expected[] = {0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00, 0x05, 0x04, 0x01, 0x01, 0x01,
