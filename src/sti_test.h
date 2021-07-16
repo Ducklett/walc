@@ -42,6 +42,7 @@ static void complete_current_test()
 
 void test_section(const char *name)
 {
+	complete_current_test();
 	testSkipSection = !strStartsWith(strFromCstr(name), testPrefix);
 
 	if (!testSkipSection) printf("#      %s\n", name);
