@@ -107,6 +107,16 @@ Wasm wasmModuleCreate()
 	return module;
 }
 
+void wasmModuleFree(Wasm *module)
+{
+	listFree(&module->imports);
+	listFree(&module->bodies);
+	listFree(&module->types);
+	listFree(&module->data);
+	listFree(&module->imports);
+	*module = (Wasm){0};
+}
+
 int wasmModuleGenerateFunctionId(Wasm *module) { return module->funcCount++; }
 
 void wasmModuleAddMemory(Wasm *module, Str name, int pages, int maxPages)

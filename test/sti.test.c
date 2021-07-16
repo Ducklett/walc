@@ -115,7 +115,7 @@ void test_sti_list()
 
 	List(int) numList = listNew();
 
-	test_that("New list is zero initialized");
+	test_that("New list is zero initialized")
 	{
 		test_assert("New list is empty", listLen(numList) == 0);
 		test_assert("listIsEmpty is true for empty list", listIsEmpty(numList));
@@ -124,7 +124,7 @@ void test_sti_list()
 		test_assert("List knows element size", listElementSize(numList) == sizeof(int));
 	}
 
-	test_that("An element can be pushed into a list");
+	test_that("An element can be pushed into a list")
 	{
 		listPush(&numList, 10);
 
@@ -135,7 +135,7 @@ void test_sti_list()
 		test_assert("The list capacity becomes the minimum", listCapacity(numList) == 0x10);
 	}
 
-	test_that("Additional elements can be added to the list");
+	test_that("Additional elements can be added to the list")
 	{
 		for (int i = 2; i <= 23; i++) {
 			listPush(&numList, i);
@@ -149,7 +149,7 @@ void test_sti_list()
 		}
 	}
 
-	test_that("List pop");
+	test_that("List pop")
 	{
 		test_assert("Returns last item", listPop(&numList) == 23);
 		test_assert("Decrements list length", listLen(numList) == 22);
@@ -158,7 +158,7 @@ void test_sti_list()
 		test_assert_panic("Panics when popping an empty list", listPop(&emptyList));
 	}
 
-	test_that("List can be freed");
+	test_that("List can be freed")
 	{
 		listFree(&numList);
 		test_assert("List becomes NULL", numList == NULL);

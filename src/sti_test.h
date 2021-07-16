@@ -67,7 +67,7 @@ void test(const char *msg, bool pass)
 
 #define test_equal(msg, a, b) test(msg, (a) == (b))
 
-void test_that(const char *msg)
+void test_that_impl(const char *msg)
 {
 	if (testSkipSection) return;
 	complete_current_test();
@@ -75,13 +75,34 @@ void test_that(const char *msg)
 	current_test_error = NULL;
 }
 
-void test_assert(const char *msg, bool pass)
+// creates a new test scope
+// use the test_assert* family within the scope to assert that
+// a sequence of procedures is functioning correctly
+// the test will break if an assert fails
+#define test_that(msg)   \
+	test_that_impl(msg); \
+	for (int t = 0; t < 1; t++)
+
+void test_assert_impl(const char *msg, bool pass)
 {
 	if (!pass && !current_test_error) current_test_error = msg;
 }
+#define test_assert(msg, pass)          \
+	{                                   \
+		bool didPass = pass;            \
+		test_assert_impl(msg, didPass); \
+		if (!didPass) break;            \
+	}
 
-#define test_assert_panic(msg, op) \
-	(testPanic = true, op, test_assert(msg, testDidPanic), testDidPanic = false, testPanic = false)
+#define test_assert_panic(msg, op)           \
+	{                                        \
+		testPanic = true;                    \
+		op;                                  \
+		test_assert_impl(msg, testDidPanic); \
+		testPanic = false;                   \
+		if (!testDidPanic) break;            \
+		testDidPanic = false;                \
+	}
 
 #define TESTPLUR(n) (n == 1 ? "test" : "tests")
 

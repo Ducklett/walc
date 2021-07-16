@@ -10,8 +10,8 @@ void test_lex_individual_operator(Str op, WlKind expected)
 {
 	WlLexer l = wlLexerCreate(op);
 	wlLexerLexTokens(&l);
-	test_assert(strFormat("lexes single token '%.*s'", STRPRINT(op)).buf,
-				l.tokenCount == 1 && l.tokens[0].kind == expected);
+	test_assert_impl(strFormat("lexes single token '%.*s'", STRPRINT(op)).buf,
+					 l.tokenCount == 1 && l.tokens[0].kind == expected);
 	wlLexerFree(&l);
 }
 
@@ -19,8 +19,8 @@ void test_lex_legal_symbol_name(Str symbol)
 {
 	WlLexer l = wlLexerCreate(symbol);
 	wlLexerLexTokens(&l);
-	test_assert(strFormat("symbol is legal '%.*s'", STRPRINT(symbol)).buf,
-				l.tokenCount == 1 && l.tokens[0].kind == WlKind_Symbol);
+	test_assert_impl(strFormat("symbol is legal '%.*s'", STRPRINT(symbol)).buf,
+					 l.tokenCount == 1 && l.tokens[0].kind == WlKind_Symbol);
 	wlLexerFree(&l);
 }
 
@@ -28,8 +28,8 @@ void test_lex_illegal_symbol_name(Str symbol)
 {
 	WlLexer l = wlLexerCreate(symbol);
 	wlLexerLexTokens(&l);
-	test_assert(strFormat("symbol is illegal '%.*s'", STRPRINT(symbol)).buf,
-				l.tokenCount >= 1 && l.tokens[0].kind != WlKind_Symbol);
+	test_assert_impl(strFormat("symbol is illegal '%.*s'", STRPRINT(symbol)).buf,
+					 l.tokenCount >= 1 && l.tokens[0].kind != WlKind_Symbol);
 	wlLexerFree(&l);
 }
 
@@ -37,8 +37,8 @@ void test_lex_individual_number(Str number, int expected)
 {
 	WlLexer l = wlLexerCreate(number);
 	wlLexerLexTokens(&l);
-	test_assert(strFormat("lexes single number '%.*s' as %d", STRPRINT(number), expected).buf,
-				l.tokenCount == 1 && l.tokens[0].kind == WlKind_Number && l.tokens[0].valueNum == expected);
+	test_assert_impl(strFormat("lexes single number '%.*s' as %d", STRPRINT(number), expected).buf,
+					 l.tokenCount == 1 && l.tokens[0].kind == WlKind_Number && l.tokens[0].valueNum == expected);
 	wlLexerFree(&l);
 }
 
@@ -62,8 +62,8 @@ void test_lexer()
 		}
 	}
 
+	test_that("lexer lexes space separated operators")
 	{
-		test_that("lexer lexes space separated operators");
 
 		Str operators = STR("+ - * / = == !=");
 
@@ -89,8 +89,8 @@ void test_lexer()
 		wlLexerFree(&l);
 	}
 
+	test_that("expected symbol names are legal")
 	{
-		test_that("expected symbol names are legal");
 
 		char *names[] = {
 			"foo", "_bar", "Baz123", "something_like_this", "a```",
@@ -100,8 +100,8 @@ void test_lexer()
 			test_lex_legal_symbol_name(strFromCstr(names[i]));
 	}
 
+	test_that("unexpected symbol names are illegal")
 	{
-		test_that("unexpected symbol names are illegal");
 
 		char *names[] = {"$foo", "~Bar", "()[]!", "@gh"};
 
@@ -109,8 +109,8 @@ void test_lexer()
 			test_lex_illegal_symbol_name(strFromCstr(names[i]));
 	}
 
+	test_that("lexer lexes individual numers")
 	{
-		test_that("lexer lexes individual numers");
 
 		char *numbers[] = {"1", "35", "0xF00", "0b10110", "3837"};
 

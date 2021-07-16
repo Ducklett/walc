@@ -12,38 +12,48 @@ void test_wasm_empty_module()
 	Buf wasm = wasmModuleCompile(module);
 	u8 expectedBytes[] = {0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00};
 	test("Empty module produces correct bytecode", bufEqual(BUF(expectedBytes), wasm));
+
+	wasmModuleFree(&module);
 }
 
 void test_wasm_memory()
 {
+	test_that("A simple module with memory compiles")
 	{
 		Wasm module = wasmModuleCreate();
-		test("Empty module doesn't have memory", module.hasMemory == false);
+		test_assert("Empty module doesn't have memory", module.hasMemory == false);
 
 		Str name = STR("foo");
 		int pages = 1;
 		int maxPages = 2;
 		wasmModuleAddMemory(&module, name, pages, maxPages);
-		test("Module has memory after is is added", module.hasMemory == true);
+		test_assert("Module has memory after is is added", module.hasMemory == true);
 
 		WasmMemory mem = module.memory;
-		test("Memory has the correct values",
-			 mem.pages == pages && mem.maxPages == maxPages && strEqual(mem.name, name));
+		test_assert("Memory has the correct values",
+					mem.pages == pages && mem.maxPages == maxPages && strEqual(mem.name, name));
 
 		Buf wasm = wasmModuleCompile(module);
 		u8 expectedBytes[] = {0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00, 0x05, 0x04, 0x01, 0x01,
 							  0x01, 0x02, 0x07, 0x07, 0x01, 0x03, 0x66, 0x6F, 0x6F, 0x02, 0x00};
 
-		test("Module with memory produces the correct bytecode", bufEqual(BUF(expectedBytes), wasm));
+		test_assert("Module with memory produces the correct bytecode", bufEqual(BUF(expectedBytes), wasm));
+
+		wasmModuleFree(&module);
 	}
 
-	// {
-	// Wasm module = wasmModuleCreate();
+	test_that("Memory can only be added once")
+	{
+		Wasm module = wasmModuleCreate();
 
-	// wasmModuleAddMemory(&module, STR("foo"), 1, 2);
-	// wasmModuleAddMemory(&module, STR("bar"), 3, 4);
-	// test("Application will panic when adding memory a second time", didPanic);
-	// }
+		wasmModuleAddMemory(&module, STR("foo"), 1, 2);
+		test_assert("Memory can be added to the module", module.hasMemory == true);
+
+		test_assert_panic("Application will panic when adding memory a second time",
+						  wasmModuleAddMemory(&module, STR("bar"), 3, 4));
+
+		wasmModuleFree(&module);
+	}
 }
 void test_wasm_func()
 {
@@ -59,6 +69,8 @@ void test_wasm_func()
 								 0x7F, 0x03, 0x02, 0x01, 0x00, 0x0A, 0x06, 0x01, 0x04, 0x00, 0x41, 0x2A, 0x0B};
 
 		test("Single function produces the correct bytecode", bufEqual(bytecode, BUF(expectedBytecode)));
+
+		wasmModuleFree(&module);
 	}
 
 	{
@@ -68,6 +80,8 @@ void test_wasm_func()
 		wasmModuleAddFunction(&module, STREMPTY, BUFEMPTY, BUF(returns), BUFEMPTY, BUF(opcodes));
 		wasmModuleAddFunction(&module, STREMPTY, BUFEMPTY, BUF(returns), BUFEMPTY, BUF(opcodes));
 		test("Two functions of the same type share a function type", listLen(module.types) == 1);
+
+		wasmModuleFree(&module);
 	}
 
 	{
@@ -78,6 +92,8 @@ void test_wasm_func()
 		wasmModuleAddFunction(&module, STREMPTY, BUFEMPTY, BUF(returns), BUFEMPTY, BUF(opcodes));
 		wasmModuleAddFunction(&module, STREMPTY, BUFEMPTY, BUF(returns2), BUFEMPTY, BUF(opcodes));
 		test("Two functions of different types get their own function type", listLen(module.types) == 2);
+
+		wasmModuleFree(&module);
 	}
 }
 
@@ -103,6 +119,8 @@ void test_wasm_import()
 								 0x76, 0x05, 0x70, 0x72, 0x69, 0x6E, 0x74, 0x00, 0x00};
 
 		test("Single import produces the correct bytecode", bufEqual(bytecode, BUF(expectedBytecode)));
+
+		wasmModuleFree(&module);
 	}
 }
 
@@ -131,6 +149,8 @@ void test_wasm_data()
 						 0x01, 0x0B, 0x15, 0x02, 0x00, 0x41, 0x00, 0x0B, 0x05, 0x68, 0x65, 0x6C, 0x6C,
 						 0x6F, 0x00, 0x41, 0x05, 0x0B, 0x05, 0x77, 0x6F, 0x72, 0x6C, 0x64};
 		test("data produces the correct bytecode", bufEqual(bytecode, BUF(expected)));
+
+		wasmModuleFree(&module);
 	}
 }
 
