@@ -19,6 +19,33 @@ extern "C" {
 #include <stdlib.h>
 #include <string.h>
 
+#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
+#define PLATFORM_WIN
+#elif __APPLE__
+#include <TargetConditionals.h>
+#if TARGET_IPHONE_SIMULATOR
+#define PLATFORM_IOS
+#elif TARGET_OS_MACCATALYST
+#define PLATFORM_MACCATALYST
+#elif TARGET_OS_IPHONE
+#define PLATFORM_IOS
+#elif TARGET_OS_MAC
+#define PLATFORM_MAC
+#else
+#error "Unknown Apple platform"
+#endif
+#elif __linux__
+#define PLATFORM_LINUX
+#elif __unix__
+#define PLATFORM_UNIX
+#elif defined(_POSIX_VERSION)
+#define PLATFORM_POSIX
+#elif __ANDROID__
+#define PLATFORM_ANDROID
+#else
+#error "Unknown compiler"
+#endif
+
 typedef uint8_t u8;
 typedef uint16_t u16;
 typedef uint32_t u32;

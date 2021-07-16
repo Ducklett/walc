@@ -39,7 +39,7 @@ void includeDirS(Str path)
 
 #define includeDir(path) includeDirS(STR(path))
 
-void compileAndRunS(Str entrypoint)
+String createCompileCommand(Str entrypoint, Str output)
 {
 	String command = stringCreate();
 	stringAppend(&command, STR("tcc "));
@@ -49,8 +49,18 @@ void compileAndRunS(Str entrypoint)
 		stringAppend(&command, STR(" "));
 	}
 
-	stringAppend(&command, STR("-run "));
-	stringAppend(&command, entrypoint);
+	if (strEqual(output, STREMPTY)) {
+		stringAppend(&command, STR("-run "));
+		stringAppend(&command, entrypoint);
+	} else {
+		stringAppend(&command, STR("-o "));
+		stringAppend(&command, output);
+#ifdef PLATFORM_WIN
+		stringAppend(&command, STR(".exe"));
+#endif
+		stringAppend(&command, STR(" "));
+		stringAppend(&command, entrypoint);
+	}
 
 	if (remainingArgc) {
 		stringAppend(&command, STR(" "));
@@ -62,11 +72,28 @@ void compileAndRunS(Str entrypoint)
 		}
 	}
 
+	return command;
+}
+
+void compileAndRunS(Str entrypoint)
+{
+	String command = createCompileCommand(entrypoint, STREMPTY);
 	char *str = stringToCStr(&command);
+
 	printf("%s>>%s%s\n", TERMBOLDBLUE, TERMCLEAR, str);
 	system(str);
 }
 #define compileAndRun(entrypoint) compileAndRunS(STR(entrypoint))
+
+void compileAndOutputS(Str entrypoint, Str outName)
+{
+	String command = createCompileCommand(entrypoint, outName);
+	char *str = stringToCStr(&command);
+
+	printf("%s>>%s%s\n", TERMBOLDBLUE, TERMCLEAR, str);
+	system(str);
+}
+#define compileAndOutput(entrypoint, outName) compileAndOutputS(STR(entrypoint), STR(outName))
 
 void describe_project();
 int main(int argc, char **argv)
