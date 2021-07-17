@@ -92,16 +92,6 @@ typedef struct {
 	u8 bytes[8];
 } UnsignedLeb128TestData;
 
-void unsigned_number_decodes_correctly(UnsignedLeb128TestData data)
-{
-	int value = leb128DecodeU(data.bytes);
-	bool pass = value == data.n;
-
-	char msg[64];
-	sprintf(msg, "%zu decodes correctly", data.n);
-	test(msg, pass);
-}
-
 void test_leb128_unsigned()
 {
 	test_section("leb128 unsigned encoding");
