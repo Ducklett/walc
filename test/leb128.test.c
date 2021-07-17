@@ -5,172 +5,92 @@
 #include <leb128.h>
 #include <sti_test.h>
 
-void signed_numbers_under_64_encode_as_themselves()
-{
-	int failI = -1;
-	for (int i = 0; i < 64; i++) {
-		DynamicBuf bytes = dynamicBufCreate();
-		leb128EncodeS(i, &bytes);
-		if (bytes.len != 1 || bytes.buf[0] != i) {
-			failI = i;
-			dynamicBufFree(&bytes);
-			break;
-		}
-		dynamicBufFree(&bytes);
-	}
-	test("Signed numbers under 64 encode as themselves", failI == -1);
-	if (failI != -1) printf("Failed at %d\n", failI);
-}
-
-void signed_numbers_above_64_require_more_bytes()
-{
-	int failI = -1;
-	for (int i = 64; i < 255; i += 8) {
-		DynamicBuf bytes = dynamicBufCreate();
-		leb128EncodeS(i, &bytes);
-		if (bytes.len < 2) {
-			failI = i;
-			dynamicBufFree(&bytes);
-			break;
-		}
-		dynamicBufFree(&bytes);
-	}
-	test("Signed numbers above 64 require more bytes", failI == -1);
-	if (failI != -1) printf("Failed at %d\n", failI);
-}
-
 typedef struct {
 	int n;
 	u8 bytes[8];
 } SignedLeb128TestData;
 
-void signed_number_encodes_correctly(SignedLeb128TestData data)
+void test_leb128_signed()
 {
-	DynamicBuf bytes = dynamicBufCreate();
-	leb128EncodeS(data.n, &bytes);
+	test_section("leb128 signed encoding");
 
-	bool pass = true;
-	if (bytes.len == 0) {
-		pass = false;
-	} else {
-		for (int i = 0; i < bytes.len; i++) {
-			if (bytes.buf[i] != data.bytes[i]) {
-				pass = false;
-				break;
-			}
+	test_that("Signed numbers under 64 encode as themselves")
+	{
+		for (int i = 0; i < 64; i++) {
+			DynamicBuf bytes = dynamicBufCreate();
+			leb128EncodeS(i, &bytes);
+			test_assert(strFormat("%d length is 1", i).buf, bytes.len == 1);
+			test_assert(strFormat("%d encodes itself", i).buf, bytes.buf[0] == i);
+			dynamicBufFree(&bytes);
 		}
 	}
 
-	dynamicBufFree(&bytes);
-	char msg[64];
-	sprintf(msg, "%d encodes correctly", data.n);
-	test(msg, pass);
-}
+	test_that("Signed numbers above 64 require more bytes")
+	{
+		for (int i = 64; i < 255; i += 8) {
+			DynamicBuf bytes = dynamicBufCreate();
+			leb128EncodeS(i, &bytes);
+			test_assert(strFormat("%d length > 1", i).buf, bytes.len > 1);
+			dynamicBufFree(&bytes);
+		}
+	}
 
-void signed_number_decodes_correctly(SignedLeb128TestData data)
-{
-	int value = leb128DecodeS(data.bytes);
-	bool pass = value == data.n;
+	{
+		SignedLeb128TestData testData[] = {
+			{64, {192, 0}},
+			//
+			{78, {206, 0}},
+			{2943, {255, 22}},
+			{0x7FFFFFFF, {255, 255, 255, 255, 7}},
+			{-1, {127}},
+			{-3884235, {181, 246, 146, 126}},
+		};
 
-	char msg[64];
-	sprintf(msg, "%d decodes correctly", data.n);
-	test(msg, pass);
-}
+		test_theory("Signed numbers encode correctly", SignedLeb128TestData, testData)
+		{
+			SignedLeb128TestData data = testData[i];
+			DynamicBuf bytes = dynamicBufCreate();
+			leb128EncodeS(data.n, &bytes);
 
-void test_leb128_signed()
-{
-	test_section("Signed LEB128 encoding");
+			test_assert(strFormat("%d encodes in non-zero bytes", data.n).buf, bytes.len > 0);
+			test_assert(strFormat("%d encodes correctly", data.n).buf,
+						bufEqual(dynamicBufToBuf(bytes), (Buf){data.bytes, bytes.len}));
 
-	signed_numbers_under_64_encode_as_themselves();
-	signed_numbers_above_64_require_more_bytes();
+			dynamicBufFree(&bytes);
+		}
+	}
 
-	signed_number_encodes_correctly((SignedLeb128TestData){64, {192, 0}});
-	signed_number_encodes_correctly((SignedLeb128TestData){78, {206, 0}});
-	signed_number_encodes_correctly((SignedLeb128TestData){2943, {255, 22}});
-	signed_number_encodes_correctly((SignedLeb128TestData){0x7FFFFFFF, {255, 255, 255, 255, 7}});
+	test_section("leb128 signed decoding");
 
-	signed_number_encodes_correctly((SignedLeb128TestData){-1, {127}});
-	signed_number_encodes_correctly((SignedLeb128TestData){-3884235, {181, 246, 146, 126}});
+	{
+		SignedLeb128TestData testData[] = {
+			{0, {0}},
+			//
+			{1, {1}},
+			{63, {63}},
+			{64, {192, 0}},
+			{78, {206, 0}},
+			{2943, {255, 22}},
+			{0x7FFFFFFF, {255, 255, 255, 255, 7}},
+			{-1, {127}},
+			{-3884235, {181, 246, 146, 126}},
+		};
 
-	test_section("Signed LEB128 decoding");
+		test_theory("Signed numbers decode correctly", SignedLeb128TestData, testData)
+		{
+			SignedLeb128TestData data = testData[i];
+			int value = leb128DecodeS(data.bytes);
+			bool pass = value == data.n;
 
-	signed_number_decodes_correctly((SignedLeb128TestData){0, {0}});
-	signed_number_decodes_correctly((SignedLeb128TestData){1, {1}});
-	signed_number_decodes_correctly((SignedLeb128TestData){63, {63}});
-	signed_number_decodes_correctly((SignedLeb128TestData){64, {192, 0}});
-	signed_number_decodes_correctly((SignedLeb128TestData){78, {206, 0}});
-	signed_number_decodes_correctly((SignedLeb128TestData){2943, {255, 22}});
-	signed_number_decodes_correctly((SignedLeb128TestData){0x7FFFFFFF, {255, 255, 255, 255, 7}});
-
-	signed_number_decodes_correctly((SignedLeb128TestData){-1, {127}});
-	signed_number_decodes_correctly((SignedLeb128TestData){-3884235, {181, 246, 146, 126}});
+			test_assert(strFormat("%d decodes correctly", data.n).buf, value == data.n);
+		}
+	}
 }
 
 typedef struct {
 	uint32_t n;
 	u8 bytes[8];
 } UnsignedLeb128TestData;
-
-void unsigned_numbers_under_128_encode_as_themselves()
-{
-	int failI = -1;
-	for (int i = 0; i < 128; i++) {
-		DynamicBuf bytes = dynamicBufCreate();
-		leb128EncodeU(i, &bytes);
-		if (bytes.len != 1 || bytes.buf[0] != i) {
-			failI = i;
-			dynamicBufFree(&bytes);
-			break;
-		}
-		dynamicBufFree(&bytes);
-	}
-
-	test("Unsigned numbers under 128 encode as themselves", failI == -1);
-	if (failI != -1) printf("Failed at %d\n", failI);
-}
-
-void unsigned_numbers_above_128_require_more_bytes()
-{
-	int failI = -1;
-	for (int i = 128; i < 255; i += 8) {
-		DynamicBuf bytes = dynamicBufCreate();
-		leb128EncodeU(i, &bytes);
-		if (bytes.len < 2) {
-			failI = i;
-			dynamicBufFree(&bytes);
-			break;
-		}
-		dynamicBufFree(&bytes);
-	}
-	test("Unsigned numbers above 128 require more bytes", failI == -1);
-	if (failI != -1) printf("Failed at %d\n", failI);
-}
-
-void unsigned_number_encodes_correctly(UnsignedLeb128TestData data)
-{
-
-	DynamicBuf bytes = dynamicBufCreate();
-	leb128EncodeU(data.n, &bytes);
-
-	bool pass = true;
-
-	if (bytes.len == 0) {
-		pass = false;
-	} else {
-
-		for (int i = 0; i < bytes.len; i++) {
-			if (bytes.buf[i] != data.bytes[i]) {
-				pass = false;
-				break;
-			}
-		}
-	}
-
-	dynamicBufFree(&bytes);
-	char msg[64];
-	sprintf(msg, "%zu encodes correctly", data.n);
-	test(msg, pass);
-}
 
 void unsigned_number_decodes_correctly(UnsignedLeb128TestData data)
 {
@@ -184,30 +104,80 @@ void unsigned_number_decodes_correctly(UnsignedLeb128TestData data)
 
 void test_leb128_unsigned()
 {
-	test_section("Unsigned LEB128 encoding");
+	test_section("leb128 unsigned encoding");
 
-	unsigned_numbers_under_128_encode_as_themselves();
-	unsigned_numbers_above_128_require_more_bytes();
+	test_that("Unigned numbers under 128 encode as themselves")
+	{
+		for (int i = 0; i < 128; i++) {
+			DynamicBuf bytes = dynamicBufCreate();
+			leb128EncodeU(i, &bytes);
+			test_assert(strFormat("%d length is 1", i).buf, bytes.len == 1);
+			test_assert(strFormat("%d encodes itself", i).buf, bytes.buf[0] == i);
+			dynamicBufFree(&bytes);
+		}
+	}
 
-	unsigned_number_encodes_correctly((UnsignedLeb128TestData){127, {127}});
-	unsigned_number_encodes_correctly((UnsignedLeb128TestData){128, {128, 1}});
-	unsigned_number_encodes_correctly((UnsignedLeb128TestData){325, {197, 2}});
-	unsigned_number_encodes_correctly((UnsignedLeb128TestData){28394, {234, 221, 1}});
-	unsigned_number_encodes_correctly((UnsignedLeb128TestData){UINT32_MAX, {255, 255, 255, 255, 15}});
+	test_that("Unsigned numbers above 128 require more bytes")
+	{
+		for (int i = 128; i < 255; i += 8) {
+			DynamicBuf bytes = dynamicBufCreate();
+			leb128EncodeU(i, &bytes);
+			test_assert(strFormat("%d length > 1", i).buf, bytes.len > 1);
+			dynamicBufFree(&bytes);
+		}
+	}
 
-	test_section("Unsigned LEB128 decoding");
+	{
+		UnsignedLeb128TestData testData[] = {
+			{127, {127}},
+			{128, {128, 1}},
+			{325, {197, 2}},
+			{28394, {234, 221, 1}},
+			{UINT32_MAX, {255, 255, 255, 255, 15}},
+		};
 
-	unsigned_number_decodes_correctly((UnsignedLeb128TestData){0, {0}});
-	unsigned_number_decodes_correctly((UnsignedLeb128TestData){1, {1}});
-	unsigned_number_decodes_correctly((UnsignedLeb128TestData){127, {127}});
-	unsigned_number_decodes_correctly((UnsignedLeb128TestData){128, {128, 1}});
-	unsigned_number_decodes_correctly((UnsignedLeb128TestData){325, {197, 2}});
-	unsigned_number_decodes_correctly((UnsignedLeb128TestData){28394, {234, 221, 1}});
-	unsigned_number_decodes_correctly((UnsignedLeb128TestData){UINT32_MAX, {255, 255, 255, 255, 15}});
+		test_theory("Unsigned numbers encode correctly", UnsignedLeb128TestData, testData)
+		{
+			UnsignedLeb128TestData data = testData[i];
+			DynamicBuf bytes = dynamicBufCreate();
+			leb128EncodeU(data.n, &bytes);
+
+			test_assert(strFormat("%zu encodes in non-zero bytes", data.n).buf, bytes.len > 0);
+			test_assert(strFormat("%zu encodes correctly", data.n).buf,
+						bufEqual(dynamicBufToBuf(bytes), (Buf){data.bytes, bytes.len}));
+
+			dynamicBufFree(&bytes);
+		}
+	}
+
+	test_section("leb128 unsigned decoding");
+
+	{
+		UnsignedLeb128TestData testData[] = {
+			{0, {0}},
+			//
+			{1, {1}},
+			{127, {127}},
+			{128, {128, 1}},
+			{325, {197, 2}},
+			{28394, {234, 221, 1}},
+			{UINT32_MAX, {255, 255, 255, 255, 15}},
+		};
+
+		test_theory("Unsigned numbers decode correctly", UnsignedLeb128TestData, testData)
+		{
+			UnsignedLeb128TestData data = testData[i];
+			int value = leb128DecodeU(data.bytes);
+			bool pass = value == data.n;
+
+			test_assert(strFormat("%d decodes correctly", data.n).buf, value == data.n);
+		}
+	}
 }
 
 void test_leb128()
 {
+	test_section("leb128");
 	test_leb128_signed();
 	test_leb128_unsigned();
 }

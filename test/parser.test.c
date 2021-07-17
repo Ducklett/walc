@@ -6,66 +6,32 @@
 
 #include <parser.c>
 
-void test_lex_individual_operator(Str op, WlKind expected)
-{
-	WlLexer l = wlLexerCreate(op);
-	List(WlToken) tokens = wlLexerLexTokens(&l);
-	test_assert_impl(strFormat("lexes single token '%.*s'", STRPRINT(op)).buf,
-					 listLen(tokens) == 1 && tokens[0].kind == expected);
-	listFree(&tokens);
-	wlLexerFree(&l);
-}
-
-void test_lex_legal_symbol_name(Str symbol)
-{
-	WlLexer l = wlLexerCreate(symbol);
-	List(WlToken) tokens = wlLexerLexTokens(&l);
-	test_assert_impl(strFormat("symbol is legal '%.*s'", STRPRINT(symbol)).buf,
-					 listLen(tokens) == 1 && tokens[0].kind == WlKind_Symbol);
-
-	listFree(&tokens);
-	wlLexerFree(&l);
-}
-
-void test_lex_illegal_symbol_name(Str symbol)
-{
-	WlLexer l = wlLexerCreate(symbol);
-	List(WlToken) tokens = wlLexerLexTokens(&l);
-	test_assert_impl(strFormat("symbol is illegal '%.*s'", STRPRINT(symbol)).buf,
-					 listLen(tokens) >= 1 && tokens[0].kind != WlKind_Symbol);
-
-	listFree(&tokens);
-	wlLexerFree(&l);
-}
-
-void test_lex_individual_number(Str number, int expected)
-{
-	WlLexer l = wlLexerCreate(number);
-	List(WlToken) tokens = wlLexerLexTokens(&l);
-	test_assert_impl(strFormat("lexes single number '%.*s' as %d", STRPRINT(number), expected).buf,
-					 listLen(tokens) == 1 && tokens[0].kind == WlKind_Number && tokens[0].valueNum == expected);
-
-	listFree(&tokens);
-	wlLexerFree(&l);
-}
-
 void test_token_lexing()
 {
 	test_section("parser token lexing");
 
 	{
-		test_that("lexer lexes individual operators");
 
 		char *operators[] = {
 			"+", "-", "*", "/", "=", "==", "!=",
 		};
-		WlKind expected[] = {
+
+		WlKind expectedKind[] = {
 			WlKind_OpPlus,	 WlKind_OpMinus,		WlKind_OpStar,		 WlKind_OpSlash,
 			WlKind_OpEquals, WlKind_OpDoubleEquals, WlKind_OpBangEquals,
 		};
 
-		for (int i = 0; i < sizeof(operators) / sizeof(char *); i++) {
-			test_lex_individual_operator(strFromCstr(operators[i]), expected[i]);
+		test_theory("lexer lexes individual operators", char *, operators)
+		{
+			Str operator= strFromCstr(operators[i]);
+			WlKind expected = expectedKind[i];
+
+			WlLexer l = wlLexerCreate(operator);
+			List(WlToken) tokens = wlLexerLexTokens(&l);
+			test_assert_impl(strFormat("lexes single token '%.*s'", STRPRINT(operator)).buf,
+							 listLen(tokens) == 1 && tokens[0].kind == expected);
+			listFree(&tokens);
+			wlLexerFree(&l);
 		}
 	}
 
@@ -96,32 +62,53 @@ void test_token_lexing()
 		wlLexerFree(&l);
 	}
 
-	test_that("expected symbol names are legal")
 	{
 		char *names[] = {
 			"foo", "_bar", "Baz123", "something_like_this", "a```",
 		};
+		test_theory("expected symbol names are legal", char *, names)
+		{
+			Str symbol = strFromCstr(names[i]);
+			WlLexer l = wlLexerCreate(symbol);
+			List(WlToken) tokens = wlLexerLexTokens(&l);
+			test_assert(strFormat("'%.*s' is a single token", STRPRINT(symbol)).buf, listLen(tokens) == 1);
+			test_assert(strFormat("'%.*s' is a symbol", STRPRINT(symbol)).buf, tokens[0].kind == WlKind_Symbol);
 
-		for (int i = 0; i < sizeof(names) / sizeof(char *); i++)
-			test_lex_legal_symbol_name(strFromCstr(names[i]));
+			listFree(&tokens);
+			wlLexerFree(&l);
+		}
 	}
 
-	test_that("unexpected symbol names are illegal")
 	{
 		char *names[] = {"$foo", "~Bar", "()[]!", "@gh"};
+		test_theory("unexpected symbol names are illegal", char *, names)
+		{
+			Str symbol = strFromCstr(names[i]);
+			WlLexer l = wlLexerCreate(symbol);
+			List(WlToken) tokens = wlLexerLexTokens(&l);
+			test_assert(strFormat("'%.*s' matches at least one token", STRPRINT(symbol)).buf, listLen(tokens) >= 1);
+			test_assert(strFormat("'%.*s' is not a symbol", STRPRINT(symbol)).buf, tokens[0].kind != WlKind_Symbol);
 
-		for (int i = 0; i < sizeof(names) / sizeof(char *); i++)
-			test_lex_illegal_symbol_name(strFromCstr(names[i]));
+			listFree(&tokens);
+			wlLexerFree(&l);
+		}
 	}
 
-	test_that("lexer lexes individual numbers")
 	{
 		char *numbers[] = {"1", "35", "0xF00", "0b10110", "3837"};
+		int expectedValues[] = {1, 35, 0xF00, 22, 3837};
+		test_theory("lexer lexes individual numbers", char *, numbers)
+		{
+			Str number = strFromCstr(numbers[i]);
+			int expected = expectedValues[i];
 
-		int expected[] = {1, 35, 0xF00, 22, 3837};
+			WlLexer l = wlLexerCreate(number);
+			List(WlToken) tokens = wlLexerLexTokens(&l);
+			test_assert(strFormat("lexes single number '%.*s' as %d", STRPRINT(number), expected).buf,
+						listLen(tokens) == 1 && tokens[0].kind == WlKind_Number && tokens[0].valueNum == expected);
 
-		for (int i = 0; i < sizeof(numbers) / sizeof(char *); i++) {
-			test_lex_individual_number(strFromCstr(numbers[i]), expected[i]);
+			listFree(&tokens);
+			wlLexerFree(&l);
 		}
 	}
 }

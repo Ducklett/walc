@@ -84,6 +84,13 @@ void test_that_impl(const char *msg)
 	test_that_impl(msg); \
 	for (int t = 0; t < 1; t++)
 
+// runs the following block for all entries of {xs}
+// the type must also be provided to calculate list length
+// you are given the index {i} to retrieve values
+#define test_theory(msg, t, xs) \
+	test_that_impl(msg);        \
+	for (int i = 0; i < sizeof(xs) / sizeof(t); ++i)
+
 void test_assert_impl(const char *msg, bool pass)
 {
 	if (!pass && !current_test_error) current_test_error = msg;
