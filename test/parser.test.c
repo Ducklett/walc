@@ -275,10 +275,39 @@ void test_expression_parsing()
 	}
 }
 
+void test_return_statement_parsing()
+{
+	test_that("Empty return gets parsed")
+	{
+		Str source = STR("return;");
+		WlParser p = wlParserCreate(source);
+		WlToken t = wlParseStatement(&p);
+		test_assert("Parses return statement", t.kind == WlKind_StReturnStatement);
+
+		WlReturnStatement ret = *(WlReturnStatement *)t.valuePtr;
+
+		test_assert("Has no expression", ret.expression.kind == WlKind_Missing);
+		wlParserFree(&p);
+	}
+
+	test_that("Return with expression gets parsed")
+	{
+		Str source = STR("return 10 + 20;");
+		WlParser p = wlParserCreate(source);
+		WlToken t = wlParseStatement(&p);
+		test_assert("Parses return statement", t.kind == WlKind_StReturnStatement);
+
+		WlReturnStatement ret = *(WlReturnStatement *)t.valuePtr;
+
+		test_assert("Has expression", t.valuePtr != WlKind_Missing);
+		wlParserFree(&p);
+	}
+}
 void test_parser()
 {
 	test_section("parser");
 
 	test_token_lexing();
 	test_expression_parsing();
+	test_return_statement_parsing();
 }

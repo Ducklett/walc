@@ -2,8 +2,9 @@
 
 int main(int argc, char **argv)
 {
-	Str source;
-	fileReadAllText("examples/01_helloworld.wl", &source) || PANIC("Failed to open file");
+	Str source = STR("export i32 main() { return 10+20*3/2; }");
+
+	// fileReadAllText("examples/01_helloworld.wl", &source) || PANIC("Failed to open file");
 
 	printf("source %.*s\n", STRPRINT(source));
 

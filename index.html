@@ -23,7 +23,7 @@
           }
         })
         console.log(wasm.instance)
-        wasm.instance.exports.main()
+        console.log(wasm.instance.exports.main())
         window.wasm = wasm
       })()
     </script>

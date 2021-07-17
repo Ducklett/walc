@@ -55,6 +55,7 @@ typedef enum
 	WlKind_Syntax_Start,
 	WlKind_StFunction,
 	WlKind_StExpressionStatement,
+	WlKind_StReturnStatement,
 	WlKind_StCall,
 	WlKind_StBinaryExpression,
 	WlKind_StType,
@@ -71,13 +72,15 @@ char *WlKindText[] = {
 	"<symbol>",
 	"<number>",
 	"<string>",
+	"<binary start>",
 	"+",
 	"-",
 	"*",
 	"/",
 	"%",
-	"=",
 	"==",
+	"<binary end>",
+	"=",
 	"!=",
 	"(",
 	")",
@@ -112,6 +115,7 @@ char *WlKindText[] = {
 	"<syntax start>",
 	"WlKind_StFunction",
 	"WlKind_StExpressionStatement",
+	"WlKind_StReturnStatement",
 	"WlKind_StCall",
 	"WlKind_StBinaryExpression",
 	"WlKind_StType",
@@ -332,6 +336,12 @@ typedef struct {
 } WlExpressionStatement;
 
 typedef struct {
+	WlToken returnKeyword;
+	WlToken expression;
+	WlToken semicolon;
+} WlReturnStatement;
+
+typedef struct {
 	WlToken left;
 	WlToken operator;
 	WlToken right;
@@ -481,12 +491,29 @@ WlToken wlParseExpression(WlParser *p) { return wlParseFullBinaryExpression(p); 
 
 WlToken wlParseStatement(WlParser *p)
 {
-	WlExpressionStatement st = {0};
-	st.expression = wlParseExpression(p);
-	st.semicolon = wlParserMatch(p, WlKind_TkSemicolon);
-	WlExpressionStatement *stp = arenaMalloc(sizeof(WlExpressionStatement), &p->arena);
-	*stp = st;
-	return (WlToken){.kind = WlKind_StExpressionStatement, .valuePtr = stp};
+	if (wlParserPeek(p).kind == WlKind_KwReturn) {
+		WlReturnStatement st = {0};
+
+		st.returnKeyword = wlParserTake(p);
+		if (wlParserPeek(p).kind == WlKind_TkSemicolon) {
+			st.expression = (WlToken){WlKind_Missing};
+		} else {
+			st.expression = wlParseExpression(p);
+		}
+		st.semicolon = wlParserMatch(p, WlKind_TkSemicolon);
+
+		WlReturnStatement *stp = arenaMalloc(sizeof(WlReturnStatement), &p->arena);
+		*stp = st;
+
+		return (WlToken){.kind = WlKind_StReturnStatement, .valuePtr = stp};
+	} else {
+		WlExpressionStatement st = {0};
+		st.expression = wlParseExpression(p);
+		st.semicolon = wlParserMatch(p, WlKind_TkSemicolon);
+		WlExpressionStatement *stp = arenaMalloc(sizeof(WlExpressionStatement), &p->arena);
+		*stp = st;
+		return (WlToken){.kind = WlKind_StExpressionStatement, .valuePtr = stp};
+	}
 }
 
 WlSyntaxBlock wlParseBlock(WlParser *p)
@@ -543,11 +570,7 @@ void wlPrintBlock(WlSyntaxBlock blk)
 	printf("\n");
 	for (int i = 0; i < blk.statementCount; i++) {
 		WlToken st = blk.statements[i];
-		assert(st.kind == WlKind_StExpressionStatement);
-		WlExpressionStatement ex = *(WlExpressionStatement *)st.valuePtr;
-		assert(ex.expression.kind == WlKind_StCall);
-		wlPrint(ex.expression);
-		wlPrint(ex.semicolon);
+		wlPrint(st);
 		printf("\n");
 	}
 	wlPrint(blk.curlyClose);
@@ -570,6 +593,23 @@ void wlPrint(WlToken tk)
 	}
 
 	switch (tk.kind) {
+	case WlKind_StBinaryExpression: {
+		WlBinaryExpression bin = *(WlBinaryExpression *)tk.valuePtr;
+		wlPrint(bin.left);
+		wlPrint(bin.operator);
+		wlPrint(bin.right);
+	} break;
+	case WlKind_StExpressionStatement: {
+		WlExpressionStatement ex = *(WlExpressionStatement *)tk.valuePtr;
+		wlPrint(ex.expression);
+		wlPrint(ex.semicolon);
+	} break;
+	case WlKind_StReturnStatement: {
+		WlReturnStatement ret = *(WlReturnStatement *)tk.valuePtr;
+		wlPrint(ret.returnKeyword);
+		wlPrint(ret.expression);
+		wlPrint(ret.semicolon);
+	} break;
 	case WlKind_StFunction: {
 		WlSyntaxFunction *fn = tk.valuePtr;
 		if (fn->export.kind == WlKind_KwExport) {
@@ -592,6 +632,6 @@ void wlPrint(WlToken tk)
 		wlPrint(call.parenClose);
 	} break;
 
-	default: TODO("Handle %s %d", WlKindText[tk.kind], tk.kind); break;
+	default: PANIC("Unhandled print function for %s %d", WlKindText[tk.kind], tk.kind); break;
 	}
 }
