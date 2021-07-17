@@ -177,7 +177,7 @@ void test_sti_list()
 		test_assert("Capacity doubles when you run out", listCapacity(numList) == 0x20);
 
 		for (int i = 1; i < 23; i++) {
-			test_assert(strFormat("list[%d]==%d+1", i, i).buf, numList[i] == i + 1);
+			test_assert(cstrFormat("list[%d]==%d+1", i, i), numList[i] == i + 1);
 		}
 	}
 

@@ -8,13 +8,18 @@ typedef enum
 	WlKind_Symbol,
 	WlKind_Number,
 	WlKind_String,
+
+	WlKind_BinaryOperators_start,
 	WlKind_OpPlus,
 	WlKind_OpMinus,
 	WlKind_OpStar,
 	WlKind_OpSlash,
-	WlKind_OpEquals,
+	WlKind_OpPercent,
 	WlKind_OpDoubleEquals,
 	WlKind_OpBangEquals,
+	WlKind_BinaryOperators_End,
+
+	WlKind_OpEquals,
 
 	WlKind_TkParenOpen,
 	WlKind_TkParenClose,
@@ -51,6 +56,7 @@ typedef enum
 	WlKind_StFunction,
 	WlKind_StExpressionStatement,
 	WlKind_StCall,
+	WlKind_StBinaryExpression,
 	WlKind_StType,
 	WlKind_StBlock,
 	WlKind_StExpression,
@@ -69,6 +75,7 @@ char *WlKindText[] = {
 	"-",
 	"*",
 	"/",
+	"%",
 	"=",
 	"==",
 	"!=",
@@ -106,6 +113,7 @@ char *WlKindText[] = {
 	"WlKind_StFunction",
 	"WlKind_StExpressionStatement",
 	"WlKind_StCall",
+	"WlKind_StBinaryExpression",
 	"WlKind_StType",
 	"WlKind_StBlock",
 	"WlKind_StExpression",
@@ -180,6 +188,7 @@ WlToken wlLexerLexToken(WlLexer *l)
 	case '+': return wlLexerBasic(l, 1, WlKind_OpPlus);
 	case '-': return wlLexerBasic(l, 1, WlKind_OpMinus); break;
 	case '*': return wlLexerBasic(l, 1, WlKind_OpStar); break;
+	case '%': return wlLexerBasic(l, 1, WlKind_OpPercent); break;
 	case '/': return wlLexerBasic(l, 1, WlKind_OpSlash); break;
 	case '=':
 		if (wlLexerLookahead(l, 1) == '=')
@@ -323,6 +332,12 @@ typedef struct {
 } WlExpressionStatement;
 
 typedef struct {
+	WlToken left;
+	WlToken operator;
+	WlToken right;
+} WlBinaryExpression;
+
+typedef struct {
 	WlToken name;
 	WlToken parenOpen;
 	WlToken arg;
@@ -380,16 +395,17 @@ WlToken wlParserTake(WlParser *p)
 	return t;
 }
 
-WlToken wlParserMatch(WlParser *p, WlKind kind)
+WlToken wlParserMatch_impl(WlParser *p, WlKind kind, const char *file, int line)
 {
 	WlToken t = wlParserTake(p);
 
 	if (t.kind != kind) {
-		printf("unexpected token %s, expected %s", WlKindText[t.kind], WlKindText[kind]);
-		TODO("Report diagnostic on mismatched token");
+		printf("unexpected token %s, expected %s\n", WlKindText[t.kind], WlKindText[kind]);
+		todo_impl("Report diagnostic on mismatched token", file, line);
 	}
 	return t;
 }
+#define wlParserMatch(p, k) wlParserMatch_impl(p, k, __FILE__, __LINE__)
 
 void wlParserAddTopLevelStatement(WlParser *p, WlToken tk)
 {
@@ -397,23 +413,71 @@ void wlParserAddTopLevelStatement(WlParser *p, WlToken tk)
 	p->topLevelDeclarations[p->topLevelCount++] = tk;
 }
 
-WlToken wlParseExpression(WlParser *p)
+WlToken wlParsePrimaryExpression(WlParser *p)
 {
-	WlSyntaxCall call = {0};
-	call.name = wlParserMatch(p, WlKind_Symbol);
-	call.parenOpen = wlParserMatch(p, WlKind_TkParenOpen);
-	if (wlParserPeek(p).kind != WlKind_TkParenClose) {
-		call.arg = wlParserMatch(p, WlKind_String);
-	} else {
-		call.arg = (WlToken){.kind = WlKind_Missing};
+	switch (wlParserPeek(p).kind) {
+	case WlKind_Number: return wlParserTake(p);
+	case WlKind_Symbol: {
+		WlSyntaxCall call = {0};
+		call.name = wlParserMatch(p, WlKind_Symbol);
+		call.parenOpen = wlParserMatch(p, WlKind_TkParenOpen);
+		if (wlParserPeek(p).kind != WlKind_TkParenClose) {
+			call.arg = wlParserMatch(p, WlKind_String);
+		} else {
+			call.arg = (WlToken){.kind = WlKind_Missing};
+		}
+		call.parenClose = wlParserMatch(p, WlKind_TkParenClose);
+
+		WlSyntaxCall *callp = arenaMalloc(sizeof(WlSyntaxCall), &p->arena);
+		*callp = call;
+
+		return (WlToken){.kind = WlKind_StCall, .valuePtr = callp};
 	}
-	call.parenClose = wlParserMatch(p, WlKind_TkParenClose);
-
-	WlSyntaxCall *callp = arenaMalloc(sizeof(WlSyntaxCall), &p->arena);
-	*callp = call;
-
-	return (WlToken){.kind = WlKind_StCall, .valuePtr = callp};
+	default: PANIC("unexpected token kind %s", WlKindText[wlParserPeek(p).kind]); break;
+	}
 }
+
+bool isBinaryOperator(WlKind k) { return k > WlKind_BinaryOperators_start && k < WlKind_BinaryOperators_End; }
+int operatorPrecedence(WlKind operator)
+{
+	switch (operator) {
+	case WlKind_OpPlus: return 12;
+	case WlKind_OpMinus: return 12;
+	case WlKind_OpStar: return 13;
+	case WlKind_OpSlash: return 13;
+	case WlKind_OpPercent: return 13;
+	case WlKind_OpBangEquals: return 9;
+	default: return -1;
+	}
+}
+
+WlToken wlParseBinaryExpression(WlParser *p, int previousPrecedence)
+{
+	WlToken left = wlParsePrimaryExpression(p);
+	while (isBinaryOperator(wlParserPeek(p).kind)) {
+		WlToken operator= wlParserPeek(p);
+		int precedence = operatorPrecedence(operator.kind);
+
+		if (precedence <= previousPrecedence) {
+			return left;
+		}
+
+		operator= wlParserTake(p);
+
+		WlToken right = wlParseBinaryExpression(p, precedence);
+
+		WlBinaryExpression *exprData = arenaMalloc(sizeof(WlBinaryExpression), &p->arena);
+		*exprData = (WlBinaryExpression){.left = left, .operator= operator, .right = right };
+
+		WlToken binaryExpression = {.kind = WlKind_StBinaryExpression, .valuePtr = exprData};
+		left = binaryExpression;
+	}
+
+	return left;
+}
+WlToken wlParseFullBinaryExpression(WlParser *p) { return wlParseBinaryExpression(p, -1); }
+
+WlToken wlParseExpression(WlParser *p) { return wlParseFullBinaryExpression(p); }
 
 WlToken wlParseStatement(WlParser *p)
 {

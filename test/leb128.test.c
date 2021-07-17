@@ -19,8 +19,8 @@ void test_leb128_signed()
 		for (int i = 0; i < 64; i++) {
 			DynamicBuf bytes = dynamicBufCreate();
 			leb128EncodeS(i, &bytes);
-			test_assert(strFormat("%d length is 1", i).buf, bytes.len == 1);
-			test_assert(strFormat("%d encodes itself", i).buf, bytes.buf[0] == i);
+			test_assert(cstrFormat("%d length is 1", i), bytes.len == 1);
+			test_assert(cstrFormat("%d encodes itself", i), bytes.buf[0] == i);
 			dynamicBufFree(&bytes);
 		}
 	}
@@ -30,7 +30,7 @@ void test_leb128_signed()
 		for (int i = 64; i < 255; i += 8) {
 			DynamicBuf bytes = dynamicBufCreate();
 			leb128EncodeS(i, &bytes);
-			test_assert(strFormat("%d length > 1", i).buf, bytes.len > 1);
+			test_assert(cstrFormat("%d length > 1", i), bytes.len > 1);
 			dynamicBufFree(&bytes);
 		}
 	}
@@ -52,8 +52,8 @@ void test_leb128_signed()
 			DynamicBuf bytes = dynamicBufCreate();
 			leb128EncodeS(data.n, &bytes);
 
-			test_assert(strFormat("%d encodes in non-zero bytes", data.n).buf, bytes.len > 0);
-			test_assert(strFormat("%d encodes correctly", data.n).buf,
+			test_assert(cstrFormat("%d encodes in non-zero bytes", data.n), bytes.len > 0);
+			test_assert(cstrFormat("%d encodes correctly", data.n),
 						bufEqual(dynamicBufToBuf(bytes), (Buf){data.bytes, bytes.len}));
 
 			dynamicBufFree(&bytes);
@@ -82,7 +82,7 @@ void test_leb128_signed()
 			int value = leb128DecodeS(data.bytes);
 			bool pass = value == data.n;
 
-			test_assert(strFormat("%d decodes correctly", data.n).buf, value == data.n);
+			test_assert(cstrFormat("%d decodes correctly", data.n), value == data.n);
 		}
 	}
 }
@@ -101,8 +101,8 @@ void test_leb128_unsigned()
 		for (int i = 0; i < 128; i++) {
 			DynamicBuf bytes = dynamicBufCreate();
 			leb128EncodeU(i, &bytes);
-			test_assert(strFormat("%d length is 1", i).buf, bytes.len == 1);
-			test_assert(strFormat("%d encodes itself", i).buf, bytes.buf[0] == i);
+			test_assert(cstrFormat("%d length is 1", i), bytes.len == 1);
+			test_assert(cstrFormat("%d encodes itself", i), bytes.buf[0] == i);
 			dynamicBufFree(&bytes);
 		}
 	}
@@ -112,7 +112,7 @@ void test_leb128_unsigned()
 		for (int i = 128; i < 255; i += 8) {
 			DynamicBuf bytes = dynamicBufCreate();
 			leb128EncodeU(i, &bytes);
-			test_assert(strFormat("%d length > 1", i).buf, bytes.len > 1);
+			test_assert(cstrFormat("%d length > 1", i), bytes.len > 1);
 			dynamicBufFree(&bytes);
 		}
 	}
@@ -132,8 +132,8 @@ void test_leb128_unsigned()
 			DynamicBuf bytes = dynamicBufCreate();
 			leb128EncodeU(data.n, &bytes);
 
-			test_assert(strFormat("%zu encodes in non-zero bytes", data.n).buf, bytes.len > 0);
-			test_assert(strFormat("%zu encodes correctly", data.n).buf,
+			test_assert(cstrFormat("%zu encodes in non-zero bytes", data.n), bytes.len > 0);
+			test_assert(cstrFormat("%zu encodes correctly", data.n),
 						bufEqual(dynamicBufToBuf(bytes), (Buf){data.bytes, bytes.len}));
 
 			dynamicBufFree(&bytes);
@@ -160,7 +160,7 @@ void test_leb128_unsigned()
 			int value = leb128DecodeU(data.bytes);
 			bool pass = value == data.n;
 
-			test_assert(strFormat("%d decodes correctly", data.n).buf, value == data.n);
+			test_assert(cstrFormat("%d decodes correctly", data.n), value == data.n);
 		}
 	}
 }

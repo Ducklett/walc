@@ -152,6 +152,8 @@ Str strFormat(const char *fmt, ...)
 	return (Str){s, len};
 }
 
+#define cstrFormat(fmt, ...) (strFormat(fmt, ##__VA_ARGS__).buf)
+
 // frees a Str that was allocated on the heap
 void strFree(Str *b)
 {
