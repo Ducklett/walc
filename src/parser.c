@@ -154,8 +154,8 @@ WlLexer wlLexerCreate(Str source)
 
 void wlLexerFree(WlLexer *l) {}
 
-char wlLexerCurrent(WlLexer *l) { return l->index < l->source.len ? l->source.buf[l->index] : NULL; }
-char wlLexerLookahead(WlLexer *l, int n) { return l->index + n < l->source.len ? l->source.buf[l->index + n] : NULL; }
+char wlLexerCurrent(WlLexer *l) { return l->index < l->source.len ? l->source.buf[l->index] : '\0'; }
+char wlLexerLookahead(WlLexer *l, int n) { return l->index + n < l->source.len ? l->source.buf[l->index + n] : '\0'; }
 
 WlToken wlLexerBasic(WlLexer *l, int len, WlKind kind)
 {
@@ -204,10 +204,10 @@ WlToken wlLexerLexToken(WlLexer *l)
 		l->index++;
 		int start = l->index;
 
-		while (wlLexerCurrent(l) != NULL && wlLexerCurrent(l) != '"')
+		while (wlLexerCurrent(l) != '\0' && wlLexerCurrent(l) != '"')
 			l->index++;
 
-		if (wlLexerCurrent(l) == NULL) {
+		if (wlLexerCurrent(l) == '\0') {
 			PANIC("unexpected EOF, expected '\"'");
 		}
 		Str value = strSlice(l->source, start, l->index - start);

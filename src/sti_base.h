@@ -239,7 +239,7 @@ void listEnsureCapacity(void **lp, int size);
 #define listIsNotEmpty(l)  (listLen(l) >= 1)
 #define listCapacity(l)	   ((l) == NULL ? 0 : LISTHEAD(l)->capacity)
 // pushes {v} onto the end of the list and returns {v}
-#define listPush(lp, v) (listEnsureCapacity(lp, sizeof(**lp)), (*(lp))[LISTHEAD(*(lp))->len++] = v, v)
+#define listPush(lp, v) (listEnsureCapacity((void **)lp, sizeof(**lp)), (*(lp))[LISTHEAD(*(lp))->len++] = v, v)
 // pops value off the end of the list and returns it
 #define listPop(lp)	 (listLen(*(lp)) == 0 ? PANIC("Popping and empty stack") : (*(lp))[--LISTHEAD(*(lp))->len])
 #define listFree(lp) (free(LISTHEAD(*(lp))), *(lp) = NULL)
