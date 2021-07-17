@@ -79,7 +79,7 @@ void emitStatement(WlbNode statement, DynamicBuf *opcodes)
 
 Buf emitWasm(WlBinder *b)
 {
-	Wasm source = wasmModuleCreate();
+	source = wasmModuleCreate();
 
 	wasmModuleAddMemory(&source, STR("memory"), 1, 2);
 
