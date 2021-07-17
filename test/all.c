@@ -14,5 +14,5 @@ void test_main()
 	test_sti();
 	test_leb128();
 	test_wasm();
-	test_lexer();
+	test_parser();
 }

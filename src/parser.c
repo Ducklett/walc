@@ -3,6 +3,7 @@
 typedef enum
 {
 	WlKind_Bad,
+	WlKind_EOF,
 	WlKind_Missing,
 	WlKind_Symbol,
 	WlKind_Number,
@@ -59,6 +60,7 @@ typedef enum
 
 char *WlKindText[] = {
 	"<bad>",
+	"<EOF>",
 	"<missing>",
 	"<symbol>",
 	"<number>",
@@ -101,8 +103,13 @@ char *WlKindText[] = {
 	"<keywords end>",
 
 	"<syntax start>",
-	"WlKind.Function",
-	"WlKind.Block",
+	"WlKind_StFunction",
+	"WlKind_StExpressionStatement",
+	"WlKind_StCall",
+	"WlKind_StType",
+	"WlKind_StBlock",
+	"WlKind_StExpression",
+	"WlKind_StExtern",
 	"<syntax end>",
 };
 
@@ -118,8 +125,6 @@ typedef struct {
 typedef struct {
 	Str source;
 	int index;
-	WlToken *tokens;
-	int tokenCount;
 } WlLexer;
 
 bool isWhitespace(char c) { return c == ' ' || c == '\t' || c == '\r' || c == '\n'; }
@@ -144,174 +149,172 @@ WlLexer wlLexerCreate(Str source)
 	return (WlLexer){
 		.source = source,
 		.index = 0,
-		.tokens = tokens,
-		.tokenCount = 0,
 	};
 }
 
-void wlLexerFree(WlLexer *lex)
+void wlLexerFree(WlLexer *l) {}
+
+char wlLexerCurrent(WlLexer *l) { return l->index < l->source.len ? l->source.buf[l->index] : NULL; }
+char wlLexerLookahead(WlLexer *l, int n) { return l->index + n < l->source.len ? l->source.buf[l->index + n] : NULL; }
+
+WlToken wlLexerBasic(WlLexer *l, int len, WlKind kind)
 {
-	free(lex->tokens);
-	lex->tokens = NULL;
-	lex->tokenCount = 0;
+	l->index += len;
+	return (WlToken){.kind = kind};
 }
 
-char wlLexerCurrent(WlLexer *lex) { return lex->index < lex->source.len ? lex->source.buf[lex->index] : NULL; }
-char wlLexerLookahead(WlLexer *lex, int n)
+void wlLexerTrim(WlLexer *l)
 {
-	return lex->index + n < lex->source.len ? lex->source.buf[lex->index + n] : NULL;
+	while (isWhitespace(wlLexerCurrent(l)))
+		l->index++;
 }
 
-void wlLexerPushBasic(WlLexer *lex, int len, WlKind kind)
+WlToken wlLexerLexToken(WlLexer *l)
 {
-	lex->tokens[lex->tokenCount++] = (WlToken){.kind = kind};
-	lex->index += len;
-}
+	wlLexerTrim(l);
+	char current = wlLexerCurrent(l);
 
-void wlLexerTrim(WlLexer *lex)
-{
-	while (isWhitespace(wlLexerCurrent(lex)))
-		lex->index++;
-}
+	if (!current) return wlLexerBasic(l, 0, WlKind_EOF);
 
-void wlLexerLexTokens(WlLexer *lex)
-{
-	char current;
-	do {
-		wlLexerTrim(lex);
-		current = wlLexerCurrent(lex);
-		if (!current) break;
-		if (lex->tokenCount >= 0xFF) PANIC("Too many tokens!");
+	switch (current) {
+	case '+': return wlLexerBasic(l, 1, WlKind_OpPlus);
+	case '-': return wlLexerBasic(l, 1, WlKind_OpMinus); break;
+	case '*': return wlLexerBasic(l, 1, WlKind_OpStar); break;
+	case '/': return wlLexerBasic(l, 1, WlKind_OpSlash); break;
+	case '=':
+		if (wlLexerLookahead(l, 1) == '=')
+			return wlLexerBasic(l, 2, WlKind_OpDoubleEquals);
+		else
+			return wlLexerBasic(l, 2, WlKind_OpEquals);
+		break;
+	case '!':
+		if (wlLexerLookahead(l, 1) == '=') {
+			return wlLexerBasic(l, 2, WlKind_OpBangEquals);
+		} else {
+			goto unmatched;
+		}
+		break;
+	case '(': return wlLexerBasic(l, 1, WlKind_TkParenOpen); break;
+	case ')': return wlLexerBasic(l, 1, WlKind_TkParenClose); break;
+	case '{': return wlLexerBasic(l, 1, WlKind_TkCurlyOpen); break;
+	case '}': return wlLexerBasic(l, 1, WlKind_TkCurlyClose); break;
+	case ',': return wlLexerBasic(l, 1, WlKind_TkComma); break;
+	case ';': return wlLexerBasic(l, 1, WlKind_TkSemicolon); break;
+	case '"': {
+		l->index++;
+		int start = l->index;
 
-		switch (current) {
-		case '+': wlLexerPushBasic(lex, 1, WlKind_OpPlus); break;
-		case '-': wlLexerPushBasic(lex, 1, WlKind_OpMinus); break;
-		case '*': wlLexerPushBasic(lex, 1, WlKind_OpStar); break;
-		case '/': wlLexerPushBasic(lex, 1, WlKind_OpSlash); break;
-		case '=':
-			if (wlLexerLookahead(lex, 1) == '=')
-				wlLexerPushBasic(lex, 2, WlKind_OpDoubleEquals);
-			else
-				wlLexerPushBasic(lex, 2, WlKind_OpEquals);
-			break;
-		case '!':
-			if (wlLexerLookahead(lex, 1) == '=') {
-				wlLexerPushBasic(lex, 2, WlKind_OpBangEquals);
-			} else {
-				goto unmatched;
-			}
-			break;
-		case '(': wlLexerPushBasic(lex, 1, WlKind_TkParenOpen); break;
-		case ')': wlLexerPushBasic(lex, 1, WlKind_TkParenClose); break;
-		case '{': wlLexerPushBasic(lex, 1, WlKind_TkCurlyOpen); break;
-		case '}': wlLexerPushBasic(lex, 1, WlKind_TkCurlyClose); break;
-		case ',': wlLexerPushBasic(lex, 1, WlKind_TkComma); break;
-		case ';': wlLexerPushBasic(lex, 1, WlKind_TkSemicolon); break;
-		case '"': {
-			lex->index++;
-			int start = lex->index;
+		while (wlLexerCurrent(l) != NULL && wlLexerCurrent(l) != '"')
+			l->index++;
 
-			while (wlLexerCurrent(lex) != NULL && wlLexerCurrent(lex) != '"')
-				lex->index++;
+		if (wlLexerCurrent(l) == NULL) {
+			PANIC("unexpected EOF, expected '\"'");
+		}
+		Str value = strSlice(l->source, start, l->index - start);
+		l->index++;
 
-			if (wlLexerCurrent(lex) == NULL) {
-				PANIC("unexpected EOF, expected '\"'");
-			}
-			Str value = strSlice(lex->source, start, lex->index - start);
-			lex->index++;
+		return (WlToken){.kind = WlKind_String, .valueStr = value};
+	} break;
+	case '0':
+	case '1':
+	case '2':
+	case '3':
+	case '4':
+	case '5':
+	case '6':
+	case '7':
+	case '8':
+	case '9': {
+		int start = l->index;
+		int value = 0;
+		if (current == '0') {
+			switch (wlLexerLookahead(l, 1)) {
+			case 'x': {
+				l->index += 2;
+				while (isHexDigit(wlLexerCurrent(l))) {
+					char d = wlLexerCurrent(l);
+					u8 digitValue;
+					if (isLowercaseLetter(d))
+						digitValue = d - 'a' + 10;
+					else if (isUppercaseLetter(d))
+						digitValue = d - 'A' + 10;
+					else
+						digitValue = d - '0';
 
-			lex->tokens[lex->tokenCount++] = (WlToken){.kind = WlKind_String, .valueStr = value};
-		} break;
-		case '0':
-		case '1':
-		case '2':
-		case '3':
-		case '4':
-		case '5':
-		case '6':
-		case '7':
-		case '8':
-		case '9': {
-			int start = lex->index;
-			int value = 0;
-			if (current == '0') {
-				switch (wlLexerLookahead(lex, 1)) {
-				case 'x': {
-					lex->index += 2;
-					while (isHexDigit(wlLexerCurrent(lex))) {
-						char d = wlLexerCurrent(lex);
-						u8 digitValue;
-						if (isLowercaseLetter(d))
-							digitValue = d - 'a' + 10;
-						else if (isUppercaseLetter(d))
-							digitValue = d - 'A' + 10;
-						else
-							digitValue = d - '0';
-
-						value <<= 4;
-						value += digitValue;
-						lex->index++;
-					}
-				}
-				case 'b': {
-					lex->index += 2;
-					while (isBinaryDigit(wlLexerCurrent(lex))) {
-						u8 digitValue = wlLexerCurrent(lex) - '0';
-						value <<= 1;
-						value += digitValue;
-						lex->index++;
-					}
-				}
-				default: {
-					// matched 0
-					lex->index++;
-				}
-				}
-
-			} else {
-				while (isDigit(wlLexerCurrent(lex))) {
-					u8 digitValue = wlLexerCurrent(lex) - '0';
-					value *= 10;
+					value <<= 4;
 					value += digitValue;
-					lex->index++;
+					l->index++;
 				}
 			}
-			lex->tokens[lex->tokenCount++] = (WlToken){.kind = WlKind_Number, .valueNum = value};
-		} break;
-		default: {
-		unmatched : {
-		}
-			bool wasKeyword = false;
-			if (isLowercaseLetter(current)) {
-				for (int i = WlKind_Keywords_Start + 1; i < WlKind_Keywords_End; i++) {
-					// TODO: bake into Str's beforehand so we don't have to convert from cstr
-					Str keyword = strFromCstr(WlKindText[i]);
-					if (strEqual(strSlice(lex->source, lex->index, keyword.len), keyword)) {
-						lex->index += keyword.len;
-						lex->tokens[lex->tokenCount++] = (WlToken){.kind = i};
-						wasKeyword = true;
-						break;
-					}
+			case 'b': {
+				l->index += 2;
+				while (isBinaryDigit(wlLexerCurrent(l))) {
+					u8 digitValue = wlLexerCurrent(l) - '0';
+					value <<= 1;
+					value += digitValue;
+					l->index++;
 				}
 			}
-
-			if (wasKeyword) break;
-
-			if (isSymbolStart(current)) {
-				int start = lex->index;
-				while (isSymbol(wlLexerCurrent(lex)))
-					lex->index++;
-				Str symbolName = strSlice(lex->source, start, lex->index - start);
-				// printf("sym: %.*s\n", STRPRINT(symbolName));
-				lex->tokens[lex->tokenCount++] = (WlToken){.kind = WlKind_Symbol, .valueStr = symbolName};
-			} else {
-				lex->index++;
-				lex->tokens[lex->tokenCount++] = (WlToken){.kind = WlKind_Bad};
+			default: {
+				// matched 0
+				l->index++;
 			}
-		} break;
+			}
+
+		} else {
+			while (isDigit(wlLexerCurrent(l))) {
+				u8 digitValue = wlLexerCurrent(l) - '0';
+				value *= 10;
+				value += digitValue;
+				l->index++;
+			}
+		}
+		return (WlToken){.kind = WlKind_Number, .valueNum = value};
+	} break;
+	default: {
+	unmatched : {
+	}
+		if (isLowercaseLetter(current)) {
+			for (int i = WlKind_Keywords_Start + 1; i < WlKind_Keywords_End; i++) {
+				// TODO: bake into Str's beforehand so we don't have to convert from cstr
+				Str keyword = strFromCstr(WlKindText[i]);
+				if (strEqual(strSlice(l->source, l->index, keyword.len), keyword)) {
+					l->index += keyword.len;
+					return (WlToken){.kind = i};
+					break;
+				}
+			}
 		}
 
-	} while (current);
+		if (isSymbolStart(current)) {
+			int start = l->index;
+			while (isSymbol(wlLexerCurrent(l)))
+				l->index++;
+			Str symbolName = strSlice(l->source, start, l->index - start);
+			return (WlToken){.kind = WlKind_Symbol, .valueStr = symbolName};
+		} else {
+			l->index++;
+			// PANIC("unexpected character '%c'", current);
+			return (WlToken){.kind = WlKind_Bad};
+		}
+	} break;
+	}
+}
+
+// lexes all tokens and returns them as a list
+// the EOF token is not returned
+List(WlToken) wlLexerLexTokens(WlLexer *l)
+{
+	WlToken t;
+	List(WlToken) tokens = listNew();
+
+	while (true) {
+		t = wlLexerLexToken(l);
+		if (t.kind == WlKind_EOF) break;
+		listPush(&tokens, t);
+	}
+
+	return tokens;
 }
 
 typedef struct {
@@ -347,7 +350,8 @@ typedef struct {
 	WlToken *topLevelDeclarations;
 	int topLevelCount;
 	ArenaAllocator arena;
-	int index;
+	WlToken current;
+	bool hasToken;
 } WlParser;
 
 WlParser wlParserCreate(Str source)
@@ -357,15 +361,29 @@ WlParser wlParserCreate(Str source)
 		.lexer = l,
 		.topLevelDeclarations = malloc(sizeof(WlToken) * 0xFF),
 		.arena = arenaCreate(),
-		.index = 0,
+		.hasToken = false,
 	};
 }
 
-WlToken wlParserCurrent(WlParser *p) { return p->lexer.tokens[p->index]; }
+WlToken wlParserPeek(WlParser *p)
+{
+	if (p->hasToken) return p->current;
+	p->hasToken = true;
+	p->current = wlLexerLexToken(&p->lexer);
+	return p->current;
+}
+
+WlToken wlParserTake(WlParser *p)
+{
+	WlToken t = p->hasToken ? p->current : wlLexerLexToken(&p->lexer);
+	p->hasToken = false;
+	return t;
+}
+
 WlToken wlParserMatch(WlParser *p, WlKind kind)
 {
-	WlToken t = wlParserCurrent(p);
-	p->index++;
+	WlToken t = wlParserTake(p);
+
 	if (t.kind != kind) {
 		printf("unexpected token %s, expected %s", WlKindText[t.kind], WlKindText[kind]);
 		TODO("Report diagnostic on mismatched token");
@@ -384,7 +402,7 @@ WlToken wlParseExpression(WlParser *p)
 	WlSyntaxCall call = {0};
 	call.name = wlParserMatch(p, WlKind_Symbol);
 	call.parenOpen = wlParserMatch(p, WlKind_TkParenOpen);
-	if (wlParserCurrent(p).kind != WlKind_TkParenClose) {
+	if (wlParserPeek(p).kind != WlKind_TkParenClose) {
 		call.arg = wlParserMatch(p, WlKind_String);
 	} else {
 		call.arg = (WlToken){.kind = WlKind_Missing};
@@ -412,7 +430,7 @@ WlSyntaxBlock wlParseBlock(WlParser *p)
 	WlSyntaxBlock blk = {0};
 	blk.curlyOpen = wlParserMatch(p, WlKind_TkCurlyOpen);
 	blk.statements = malloc(sizeof(WlToken) * 0xFF);
-	while (wlParserCurrent(p).kind != WlKind_TkCurlyClose) {
+	while (wlParserPeek(p).kind != WlKind_TkCurlyClose) {
 		blk.statements[blk.statementCount++] = wlParseStatement(p);
 	}
 
@@ -424,7 +442,7 @@ void wlParseFunction(WlParser *p)
 {
 	WlSyntaxFunction fn = {0};
 
-	if (wlParserCurrent(p).kind == WlKind_KwExport) {
+	if (wlParserPeek(p).kind == WlKind_KwExport) {
 		fn.export = wlParserMatch(p, WlKind_KwExport);
 	}
 
@@ -441,13 +459,7 @@ void wlParseFunction(WlParser *p)
 
 void wlParse(WlParser *p)
 {
-	wlLexerLexTokens(&p->lexer);
-
-	for (int i = 0; i < p->lexer.tokenCount; i++) {
-		printf("%s\n", WlKindText[p->lexer.tokens[i].kind]);
-	}
-
-	while (p->index != p->lexer.tokenCount) {
+	while (wlParserPeek(p).kind != WlKind_EOF) {
 		wlParseFunction(p);
 	}
 }
@@ -470,11 +482,7 @@ void wlPrintBlock(WlSyntaxBlock blk)
 		assert(st.kind == WlKind_StExpressionStatement);
 		WlExpressionStatement ex = *(WlExpressionStatement *)st.valuePtr;
 		assert(ex.expression.kind == WlKind_StCall);
-		WlSyntaxCall call = *(WlSyntaxCall *)ex.expression.valuePtr;
-		wlPrint(call.name);
-		wlPrint(call.parenOpen);
-		wlPrint(call.arg);
-		wlPrint(call.parenClose);
+		wlPrint(ex.expression);
 		wlPrint(ex.semicolon);
 		printf("\n");
 	}
@@ -512,7 +520,14 @@ void wlPrint(WlToken tk)
 		printf(" ");
 		wlPrintBlock(fn->body);
 	} break;
+	case WlKind_StCall: {
+		WlSyntaxCall call = *(WlSyntaxCall *)tk.valuePtr;
+		wlPrint(call.name);
+		wlPrint(call.parenOpen);
+		wlPrint(call.arg);
+		wlPrint(call.parenClose);
+	} break;
 
-	default: TODO("Handle %s", WlKindText[tk.kind]); break;
+	default: TODO("Handle %s %d", WlKindText[tk.kind], tk.kind); break;
 	}
 }
