@@ -2,27 +2,28 @@
 
 typedef enum
 {
-	WlBType_start,
 	WlBType_u0,
+	WlBType_bool,
 	WlBType_u32,
 	WlBType_i32,
 	WlBType_u64,
 	WlBType_i64,
 	WlBType_f32,
 	WlBType_f64,
+	WlBType_str,
 	WlBType_end,
 	WlBType_unknown,
 } WlBType;
 
 char *WlBTypeText[] = {
-	"<>", "u0", "u32", "i32", "u64", "i64", "f32", "f64", "<>", "<>",
+	"u0", "bool", "u32", "i32", "u64", "i64", "f32", "f64", "str", "<>", "<>",
 };
 
 WlBType wlBindType(WlToken tk)
 {
 	assert(tk.kind == WlKind_Symbol);
 
-	for (int i = WlBType_start + 1; i < WlBType_end; i++) {
+	for (int i = 0; i < WlBType_end; i++) {
 		Str fuck = strFromCstr(WlBTypeText[i]);
 		// TODO: cache Str
 		if (strEqual(tk.valueStr, fuck)) {
@@ -67,6 +68,7 @@ typedef enum
 typedef struct {
 	int index;
 	Str name;
+	WlBType type;
 	WlSymbolFlags flags;
 } WlSymbol;
 
@@ -76,6 +78,7 @@ typedef struct {
 
 typedef struct {
 	WlBKind kind;
+	WlBType type;
 	union {
 		void *data;
 		Str dataStr;
@@ -116,21 +119,21 @@ typedef struct {
 	WlToken *unboundDeclarations;
 	int unboundCount;
 
-	WlBoundFunction *functions;
-	int functionCount;
+	List(WlBoundFunction) functions;
 	ArenaAllocator arena;
 	WlScope *currentScope;
+	WlBType currentReturnType;
 } WlBinder;
 
 WlSymbol *wlFindVariable(WlBinder *b, Str name);
 
-WlSymbol *wlPushVariable(WlBinder *b, Str name)
+WlSymbol *wlPushVariable(WlBinder *b, Str name, WlBType type)
 {
 	WlSymbol *existing = wlFindVariable(b, name);
 	if (existing) PANIC("variable by name %.*s already exists");
 
 	List(WlSymbol) symbols = b->currentScope->symbols;
-	WlSymbol newSymbol = (WlSymbol){.name = name, .flags = WlSFlag_None, .index = listLen(symbols)};
+	WlSymbol newSymbol = (WlSymbol){.name = name, .type = type, .flags = WlSFlag_None, .index = listLen(symbols)};
 	listPush(&symbols, newSymbol);
 	b->currentScope->symbols = symbols;
 }
@@ -164,38 +167,48 @@ WlBOperator wlBindOperator(WlToken op)
 	}
 }
 
-WlbNode wlBindExpression(WlBinder *b, WlToken expression)
+bool wlIsNumberType(WlBType t) { return (t >= WlBType_u32 && t <= WlBType_f64); }
+bool wlIsFloatType(WlBType t) { return (t == WlBType_f32 || t == WlBType_f64); }
+
+WlbNode wlBindExpression(WlBinder *b, WlToken expression, WlBType type)
 {
 	switch (expression.kind) {
 	case WlKind_Number: {
-		return (WlbNode){.kind = WlBKind_NumberLiteral, .dataNum = expression.valueNum};
+		if (!wlIsNumberType(type)) PANIC("Expected type %d but got number literal", type);
+		return (WlbNode){.kind = WlBKind_NumberLiteral, .dataNum = expression.valueNum, .type = type};
+	}
+	case WlKind_FloatNumber: {
+		if (!wlIsFloatType(type)) PANIC("Expected type %d but got float literal", type);
+		return (WlbNode){.kind = WlBKind_NumberLiteral, .dataNum = expression.valueNum, .type = type};
 	}
 	case WlKind_StBinaryExpression: {
 		WlBinaryExpression ex = *(WlBinaryExpression *)expression.valuePtr;
 		WlBoundBinaryExpression bex;
-		bex.left = wlBindExpression(b, ex.left);
+		bex.left = wlBindExpression(b, ex.left, type);
 		bex.operator= wlBindOperator(ex.operator);
-		bex.right = wlBindExpression(b, ex.right);
+		bex.right = wlBindExpression(b, ex.right, type);
+
+		// todo: get the proper return type based on the operator and operands
 
 		WlBoundBinaryExpression *bexp = arenaMalloc(sizeof(WlBoundBinaryExpression), &b->arena);
 		*bexp = bex;
 
-		return (WlbNode){.kind = WlBKind_BinaryExpression, .data = bexp};
+		return (WlbNode){.kind = WlBKind_BinaryExpression, .data = bexp, .type = type};
 	}
 	case WlKind_StCall: {
 		WlSyntaxCall call = *(WlSyntaxCall *)expression.valuePtr;
 
 		WlBoundCallExpression bcall = {0};
 		if (call.arg.kind == WlKind_String) {
-			bcall.arg = (WlbNode){.kind = WlBKind_StringLiteral, .dataStr = call.arg.valueStr};
+			bcall.arg = (WlbNode){.kind = WlBKind_StringLiteral, .dataStr = call.arg.valueStr, .type = WlBType_str};
 		} else {
-			bcall.arg = (WlbNode){.kind = WlKind_Missing, .data = NULL};
+			bcall.arg = (WlbNode){.kind = WlKind_Missing, .data = NULL, .type = WlBType_unknown};
 		}
 
 		WlBoundCallExpression *bcallp = arenaMalloc(sizeof(WlBoundCallExpression), &b->arena);
 		*bcallp = bcall;
 
-		return (WlbNode){.kind = WlBKind_Call, .data = bcallp};
+		return (WlbNode){.kind = WlBKind_Call, .data = bcallp, .type = WlBType_u0};
 	}
 
 	case WlKind_StRef: {
@@ -204,10 +217,13 @@ WlbNode wlBindExpression(WlBinder *b, WlToken expression)
 		// we should either store symbol pointers and allocate symbols in the arena
 		// or determine the amount of symbols in the scope ahead of time
 		WlSymbol *variable = wlFindVariable(b, name);
+		if (type != variable->type) {
+			PANIC("Type mismatch! expected %d, got %d", type, variable->type);
+		}
 
 		if (!variable) PANIC("failed to find variable by name %.*s", STRPRINT(name));
 
-		return (WlbNode){.kind = WlBKind_Ref, .data = variable};
+		return (WlbNode){.kind = WlBKind_Ref, .data = variable, .type = variable->type};
 	}
 
 	default: PANIC("Unhandled expression kind %s", WlKindText[expression.kind]);
@@ -222,20 +238,23 @@ WlbNode wlBindStatement(WlBinder *b, WlToken statement)
 
 		WlBoundReturn bret;
 
-		// TODO: match return expression type with function type
 		if (ret.expression.kind != WlKind_Missing) {
-			bret.expression = wlBindExpression(b, ret.expression);
+			WlBType t = b->currentReturnType;
+			bret.expression = wlBindExpression(b, ret.expression, t);
 		} else {
-			bret.expression = (WlbNode){.kind = WlBKind_None};
+			if (b->currentReturnType != WlBType_u0) {
+				PANIC("Expected return to have expression because return type is not u0");
+			}
+			bret.expression = (WlbNode){.kind = WlBKind_None, .type = b->currentReturnType};
 		}
 
 		WlBoundReturn *bretp = arenaMalloc(sizeof(WlBoundReturn), &b->arena);
 		*bretp = bret;
-		return (WlbNode){.kind = WlBKind_Return, .data = bretp};
+		return (WlbNode){.kind = WlBKind_Return, .data = bretp, .type = b->currentReturnType};
 	} break;
 	case WlKind_StExpressionStatement: {
 		WlExpressionStatement ex = *(WlExpressionStatement *)statement.valuePtr;
-		return wlBindExpression(b, ex.expression);
+		return wlBindExpression(b, ex.expression, WlBType_u0);
 	} break;
 	default: PANIC("Unhandled statement kind %s", WlKindText[statement.kind]);
 	}
@@ -268,7 +287,7 @@ WlbNode wlBindBlock(WlBinder *b, WlSyntaxBlock body, bool createScope)
 	}
 	blk->nodes = nodes;
 
-	return (WlbNode){.kind = WlBKind_Block, .data = blk};
+	return (WlbNode){.kind = WlBKind_Block, .type = WlBType_u0, .data = blk};
 }
 
 WlBinder wlBind(WlToken *declarations, int declarationCount)
@@ -276,8 +295,7 @@ WlBinder wlBind(WlToken *declarations, int declarationCount)
 	WlBinder b = {
 		.unboundDeclarations = declarations,
 		.unboundCount = declarationCount,
-		.functions = smalloc(sizeof(WlBoundFunction) * 0xFF),
-		.functionCount = 0,
+		.functions = listNew(),
 		.arena = arenaCreate(),
 	};
 
@@ -287,8 +305,6 @@ WlBinder wlBind(WlToken *declarations, int declarationCount)
 
 		WlSyntaxFunction fn = *(WlSyntaxFunction *)(tk.valuePtr);
 
-		if (b.functionCount >= 0xFF) PANIC("Too many bound functions");
-
 		WlScope *s = WlCreateScope(&b);
 
 		int paramCount = 0;
@@ -297,17 +313,22 @@ WlBinder wlBind(WlToken *declarations, int declarationCount)
 			WlToken paramToken = fn.parameterList[i];
 			WlSyntaxParameter param = *(WlSyntaxParameter *)paramToken.valuePtr;
 
-			wlPushVariable(&b, param.name.valueStr);
+			WlBType paramType = wlBindType(param.type);
+			wlPushVariable(&b, param.name.valueStr, paramType);
 		}
 
-		b.functions[b.functionCount++] = (WlBoundFunction){
+		WlBType returnType = wlBindType(fn.type);
+		b.currentReturnType = returnType;
+
+		WlBoundFunction bf = {
 			.scope = s,
 			.paramCount = paramCount,
 			.exported = fn.export.kind == WlKind_KwExport,
-			.returnType = wlBindType(fn.type),
+			.returnType = returnType,
 			.name = fn.name.valueStr,
 			.body = wlBindBlock(&b, fn.body, false),
 		};
+		listPush(&b.functions, bf);
 	}
 
 	return b;

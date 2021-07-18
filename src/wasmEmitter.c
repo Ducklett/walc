@@ -18,14 +18,59 @@ WasmType boundTypeToWasm(WlBType t)
 Wasm source;
 int fnPrint;
 
-void emitOperator(WlBOperator op, DynamicBuf *opcodes)
+void emitOperator(WlBType type, WlBOperator op, DynamicBuf *opcodes)
 {
 	switch (op) {
-	case WlBOperator_Add: wasmPushOpi32Add(opcodes); break;
-	case WlBOperator_Subtract: wasmPushOpi32Sub(opcodes); break;
-	case WlBOperator_Multiply: wasmPushOpi32Mul(opcodes); break;
-	case WlBOperator_Divide: wasmPushOpi32DivS(opcodes); break;
-	case WlBOperator_Modulo: wasmPushOpi32RemS(opcodes); break;
+	case WlBOperator_Add:
+		switch (type) {
+		case WlBType_i32: wasmPushOpi32Add(opcodes); break;
+		case WlBType_u32: wasmPushOpi32Add(opcodes); break;
+		case WlBType_i64: wasmPushOpi64Add(opcodes); break;
+		case WlBType_u64: wasmPushOpi64Add(opcodes); break;
+		case WlBType_f32: wasmPushOpf32Add(opcodes); break;
+		case WlBType_f64: wasmPushOpf64Add(opcodes); break;
+		}
+		break;
+	case WlBOperator_Subtract:
+		switch (type) {
+		case WlBType_i32: wasmPushOpi32Sub(opcodes); break;
+		case WlBType_u32: wasmPushOpi32Sub(opcodes); break;
+		case WlBType_i64: wasmPushOpi64Sub(opcodes); break;
+		case WlBType_u64: wasmPushOpi64Sub(opcodes); break;
+		case WlBType_f32: wasmPushOpf32Sub(opcodes); break;
+		case WlBType_f64: wasmPushOpf64Sub(opcodes); break;
+		}
+		break;
+	case WlBOperator_Multiply:
+		switch (type) {
+		case WlBType_i32: wasmPushOpi32Mul(opcodes); break;
+		case WlBType_u32: wasmPushOpi32Mul(opcodes); break;
+		case WlBType_i64: wasmPushOpi64Mul(opcodes); break;
+		case WlBType_u64: wasmPushOpi64Mul(opcodes); break;
+		case WlBType_f32: wasmPushOpf32Mul(opcodes); break;
+		case WlBType_f64: wasmPushOpf64Mul(opcodes); break;
+		}
+		break;
+	case WlBOperator_Divide:
+		switch (type) {
+		case WlBType_i32: wasmPushOpi32DivS(opcodes); break;
+		case WlBType_u32: wasmPushOpi32DivU(opcodes); break;
+		case WlBType_i64: wasmPushOpi64DivS(opcodes); break;
+		case WlBType_u64: wasmPushOpi64DivU(opcodes); break;
+		case WlBType_f32: wasmPushOpf32Div(opcodes); break;
+		case WlBType_f64: wasmPushOpf64Div(opcodes); break;
+		}
+		break;
+	case WlBOperator_Modulo:
+		switch (type) {
+		case WlBType_i32: wasmPushOpi32RemS(opcodes); break;
+		case WlBType_u32: wasmPushOpi32RemU(opcodes); break;
+		case WlBType_i64: wasmPushOpi64RemS(opcodes); break;
+		case WlBType_u64: wasmPushOpi64RemU(opcodes); break;
+		case WlBType_f32: TODO("Support modulo on float32"); break;
+		case WlBType_f64: TODO("Support modulo on float64"); break;
+		}
+		break;
 	default: PANIC("Unhandled operator %d", op); break;
 	}
 }
@@ -37,11 +82,19 @@ void emitExpression(WlbNode expression, DynamicBuf *opcodes)
 		WlBoundBinaryExpression bin = *(WlBoundBinaryExpression *)expression.data;
 		emitExpression(bin.left, opcodes);
 		emitExpression(bin.right, opcodes);
-		emitOperator(bin.operator, opcodes);
+		emitOperator(expression.type, bin.operator, opcodes);
 
 	} break;
 	case WlBKind_NumberLiteral: {
-		wasmPushOpi32Const(opcodes, expression.dataNum);
+		switch (expression.type) {
+		case WlBType_i32: wasmPushOpi32Const(opcodes, expression.dataNum); break;
+		case WlBType_u32: wasmPushOpi32Const(opcodes, expression.dataNum); break;
+		case WlBType_i64: wasmPushOpi64Const(opcodes, expression.dataNum); break;
+		case WlBType_u64: wasmPushOpi64Const(opcodes, expression.dataNum); break;
+		case WlBType_f32: wasmPushOpf32Const(opcodes, expression.dataNum); break;
+		case WlBType_f64: wasmPushOpf64Const(opcodes, expression.dataNum); break;
+		default: PANIC("UnHandled constant type %d", expression.type);
+		}
 	} break;
 	case WlBKind_Ref: {
 		WlSymbol *sym = expression.data;
@@ -92,12 +145,14 @@ Buf emitWasm(WlBinder *b)
 	// import print (hardcoded for now)
 	fnPrint = wasmModuleAddImport(&source, STR("print"), BUF(args), BUFEMPTY);
 
-	for (int i = 0; i < b->functionCount; i++) {
+	int functionCount = listLen(b->functions);
+	for (int i = 0; i < functionCount; i++) {
 		WlBoundFunction fn = b->functions[i];
 
 		DynamicBuf args = dynamicBufCreate();
 		for (int i = 0; i < fn.paramCount; i++) {
-			dynamicBufPush(&args, WasmType_I32);
+			WlSymbol param = fn.scope->symbols[i];
+			dynamicBufPush(&args, boundTypeToWasm(param.type));
 		}
 
 		DynamicBuf rets = dynamicBufCreate();

@@ -17,7 +17,8 @@ int main(int argc, char **argv)
 		wlPrint(p.topLevelDeclarations[i]);
 	}
 
-	for (int i = 0; i < b.functionCount; i++) {
+	int functionCount = listLen(b.functions);
+	for (int i = 0; i < functionCount; i++) {
 		WlBoundFunction fn = b.functions[i];
 		printf("%s%s %.*s(){}\n", fn.exported ? "export " : "", WlBTypeText[fn.returnType], STRPRINT(fn.name));
 	}

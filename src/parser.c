@@ -7,6 +7,7 @@ typedef enum
 	WlKind_Missing,
 	WlKind_Symbol,
 	WlKind_Number,
+	WlKind_FloatNumber,
 	WlKind_String,
 
 	WlKind_BinaryOperators_start,
@@ -73,6 +74,7 @@ char *WlKindText[] = {
 	"<missing>",
 	"<symbol>",
 	"<number>",
+	"<floatnumber>",
 	"<string>",
 	"<binary start>",
 	"+",
@@ -132,7 +134,8 @@ char *WlKindText[] = {
 typedef struct {
 	WlKind kind;
 	union {
-		int valueNum;
+		i64 valueNum;
+		f64 valueFloat;
 		Str valueStr;
 		void *valuePtr;
 	};
@@ -312,6 +315,7 @@ lexStart:
 			default: {
 				// matched 0
 				l->index++;
+				goto floatTest;
 			}
 			}
 
@@ -321,6 +325,21 @@ lexStart:
 				value *= 10;
 				value += digitValue;
 				l->index++;
+			}
+		floatTest:
+			if (wlLexerCurrent(l) == '.') {
+				l->index++;
+				int floatDivisor = 1;
+				int floatValue;
+				while (isDigit(wlLexerCurrent(l))) {
+					u8 digitValue = wlLexerCurrent(l) - '0';
+					floatValue *= 10;
+					floatValue += digitValue;
+					l->index++;
+					floatDivisor *= 10;
+				}
+				f64 finalValue = value + (floatValue / (f64)floatDivisor);
+				return (WlToken){.kind = WlKind_FloatNumber, .valueFloat = finalValue};
 			}
 		}
 		return (WlToken){.kind = WlKind_Number, .valueNum = value};
@@ -501,6 +520,7 @@ WlToken wlParsePrimaryExpression(WlParser *p)
 {
 	switch (wlParserPeek(p).kind) {
 	case WlKind_Number: return wlParserTake(p);
+	case WlKind_FloatNumber: return wlParserTake(p);
 	case WlKind_Symbol: {
 		WlToken symbol = wlParserMatch(p, WlKind_Symbol);
 

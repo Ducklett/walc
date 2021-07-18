@@ -615,12 +615,15 @@ void wasmPushOpi64Const(DynamicBuf *body, i64 value)
 void wasmPushOpf32Const(DynamicBuf *body, f32 value)
 {
 	dynamicBufPush(body, 0x43);
-	TODO("encode floats");
+
+	u8 *valueP = (u8 *)&value;
+	dynamicBufAppend(body, (Buf){valueP, 4});
 }
 void wasmPushOpf64Const(DynamicBuf *body, f64 value)
 {
 	dynamicBufPush(body, 0x44);
-	TODO("encode floats");
+	u8 *valueP = (u8 *)&value;
+	dynamicBufAppend(body, (Buf){valueP, 8});
 }
 
 void wasmPushOpi32Eqz(DynamicBuf *body) { dynamicBufPush(body, 0x45); }
