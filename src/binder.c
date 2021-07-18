@@ -82,7 +82,8 @@ typedef struct {
 	union {
 		void *data;
 		Str dataStr;
-		int dataNum;
+		i64 dataNum;
+		f64 dataFloat;
 	};
 } WlbNode;
 
@@ -175,11 +176,16 @@ WlbNode wlBindExpression(WlBinder *b, WlToken expression, WlBType type)
 	switch (expression.kind) {
 	case WlKind_Number: {
 		if (!wlIsNumberType(type)) PANIC("Expected type %d but got number literal", type);
-		return (WlbNode){.kind = WlBKind_NumberLiteral, .dataNum = expression.valueNum, .type = type};
+		if (wlIsFloatType(type)) {
+			// reinterpret the integer as a float
+			return (WlbNode){.kind = WlBKind_NumberLiteral, .dataFloat = expression.valueNum, .type = type};
+		} else {
+			return (WlbNode){.kind = WlBKind_NumberLiteral, .dataNum = expression.valueNum, .type = type};
+		}
 	}
 	case WlKind_FloatNumber: {
 		if (!wlIsFloatType(type)) PANIC("Expected type %d but got float literal", type);
-		return (WlbNode){.kind = WlBKind_NumberLiteral, .dataNum = expression.valueNum, .type = type};
+		return (WlbNode){.kind = WlBKind_NumberLiteral, .dataFloat = expression.valueFloat, .type = type};
 	}
 	case WlKind_StBinaryExpression: {
 		WlBinaryExpression ex = *(WlBinaryExpression *)expression.valuePtr;

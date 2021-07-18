@@ -91,8 +91,8 @@ void emitExpression(WlbNode expression, DynamicBuf *opcodes)
 		case WlBType_u32: wasmPushOpi32Const(opcodes, expression.dataNum); break;
 		case WlBType_i64: wasmPushOpi64Const(opcodes, expression.dataNum); break;
 		case WlBType_u64: wasmPushOpi64Const(opcodes, expression.dataNum); break;
-		case WlBType_f32: wasmPushOpf32Const(opcodes, expression.dataNum); break;
-		case WlBType_f64: wasmPushOpf64Const(opcodes, expression.dataNum); break;
+		case WlBType_f32: wasmPushOpf32Const(opcodes, expression.dataFloat); break;
+		case WlBType_f64: wasmPushOpf64Const(opcodes, expression.dataFloat); break;
 		default: PANIC("UnHandled constant type %d", expression.type);
 		}
 	} break;
