@@ -79,14 +79,15 @@ void test_token_lexing()
 	}
 
 	{
-		char *names[] = {"$foo", "~Bar", "()[]!", "@gh"};
+		char *names[] = {"$foo", "~Bar", "()[]!", "@gh", "foo;"};
 		test_theory("unexpected symbol names are illegal", char *, names)
 		{
 			Str symbol = strFromCstr(names[i]);
 			WlLexer l = wlLexerCreate(symbol);
 			List(WlToken) tokens = wlLexerLexTokens(&l);
 			test_assert(cstrFormat("'%.*s' matches at least one token", STRPRINT(symbol)), listLen(tokens) >= 1);
-			test_assert(cstrFormat("'%.*s' is not a symbol", STRPRINT(symbol)), tokens[0].kind != WlKind_Symbol);
+			test_assert(cstrFormat("'%.*s' is not a symbol", STRPRINT(symbol)),
+						listLen(tokens) > 1 || tokens[0].kind != WlKind_Symbol);
 
 			listFree(&tokens);
 			wlLexerFree(&l);
@@ -332,6 +333,47 @@ void test_return_statement_parsing()
 		wlParserFree(&p);
 	}
 }
+
+void test_function_parsing()
+{
+	test_that("parser parses parameter list")
+	{
+		Str source = STR("u32 a, u32 b, u32 c");
+		WlParser p = wlParserCreate(source);
+		WlKind delimeter = WlKind_TkComma;
+
+		List(WlToken) t = wlParseParameterList(&p);
+
+		test_assert("parses 5 tokens", listLen(t) == 5);
+		test_assert("1st token is symbol", t[0].kind == WlKind_StFunctionParameter);
+		test_assert("2nd token is delimeter", t[1].kind == delimeter);
+		test_assert("3rd token is symbol", t[2].kind == WlKind_StFunctionParameter);
+		test_assert("4th token is delimeter", t[3].kind == delimeter);
+		test_assert("5th token is symbol", t[4].kind == WlKind_StFunctionParameter);
+
+		wlParserFree(&p);
+	}
+
+	test_that("parameter list allows optional trailing comma")
+	{
+		Str source = STR("u32 a, u32 b, u32 c,");
+		WlParser p = wlParserCreate(source);
+		WlKind delimeter = WlKind_TkComma;
+
+		List(WlToken) t = wlParseParameterList(&p);
+
+		test_assert("parses 6 tokens", listLen(t) == 6);
+		test_assert("1st token is symbol", t[0].kind == WlKind_StFunctionParameter);
+		test_assert("2nd token is delimeter", t[1].kind == delimeter);
+		test_assert("3rd token is symbol", t[2].kind == WlKind_StFunctionParameter);
+		test_assert("4th token is delimeter", t[3].kind == delimeter);
+		test_assert("5th token is symbol", t[4].kind == WlKind_StFunctionParameter);
+		test_assert("6th token is delimeter", t[5].kind == delimeter);
+
+		wlParserFree(&p);
+	}
+}
+
 void test_parser()
 {
 	test_section("parser");
@@ -339,4 +381,5 @@ void test_parser()
 	test_token_lexing();
 	test_expression_parsing();
 	test_return_statement_parsing();
+	test_function_parsing();
 }

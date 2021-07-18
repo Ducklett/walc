@@ -54,9 +54,11 @@ typedef enum
 
 	WlKind_Syntax_Start,
 	WlKind_StFunction,
+	WlKind_StFunctionParameter,
 	WlKind_StExpressionStatement,
 	WlKind_StReturnStatement,
 	WlKind_StCall,
+	WlKind_StRef,
 	WlKind_StBinaryExpression,
 	WlKind_StType,
 	WlKind_StBlock,
@@ -114,9 +116,11 @@ char *WlKindText[] = {
 
 	"<syntax start>",
 	"WlKind_StFunction",
+	"WlKind_StFunctionParameter",
 	"WlKind_StExpressionStatement",
 	"WlKind_StReturnStatement",
 	"WlKind_StCall",
+	"WlKind_StRef",
 	"WlKind_StBinaryExpression",
 	"WlKind_StType",
 	"WlKind_StBlock",
@@ -150,7 +154,7 @@ bool isUppercaseLetter(char c) { return c >= 'A' && c <= 'Z'; }
 bool isLetter(char c) { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'); }
 bool isCompilerReserved(char c)
 {
-	return (c >= 0 && c <= 47) || c == 64 || (c >= 91 && c <= 94) || (c >= 123 && c <= 127) || (c == 255);
+	return (c >= 0 && c <= 47) || (c >= 58 && c <= 64) || (c >= 91 && c <= 94) || (c >= 123 && c <= 127) || (c == 255);
 }
 bool isSymbol(char c) { return !isCompilerReserved(c); }
 bool isSymbolStart(char c) { return !isDigit(c) && !isCompilerReserved(c); }
@@ -399,10 +403,16 @@ typedef struct {
 } WlSyntaxBlock;
 
 typedef struct {
+	WlToken type;
+	WlToken name;
+} WlSyntaxParameter;
+
+typedef struct {
 	WlToken export;
 	WlToken type;
 	WlToken name;
 	WlToken parenOpen;
+	List(WlToken) parameterList;
 	WlToken parenClose;
 	WlSyntaxBlock body;
 } WlSyntaxFunction;
@@ -460,25 +470,60 @@ void wlParserAddTopLevelStatement(WlParser *p, WlToken tk)
 	p->topLevelDeclarations[p->topLevelCount++] = tk;
 }
 
+WlToken wlParseParameter(WlParser *p)
+{
+	WlSyntaxParameter param;
+	param.type = wlParserMatch(p, WlKind_Symbol);
+	param.name = wlParserMatch(p, WlKind_Symbol);
+
+	WlSyntaxParameter *paramp = arenaMalloc(sizeof(WlSyntaxParameter), &p->arena);
+	*paramp = param;
+	return (WlToken){.kind = WlKind_StFunctionParameter, .valuePtr = paramp};
+}
+
+List(WlToken) wlParseParameterList(WlParser *p)
+{
+	List(WlToken) list = listNew();
+
+	while (true) {
+		if (wlParserPeek(p).kind != WlKind_Symbol) break;
+		WlToken param = wlParseParameter(p);
+		listPush(&list, param);
+
+		if (wlParserPeek(p).kind != WlKind_TkComma) break;
+		WlToken delim = wlParserMatch(p, WlKind_TkComma);
+		listPush(&list, delim);
+	}
+	return list;
+}
+
 WlToken wlParsePrimaryExpression(WlParser *p)
 {
 	switch (wlParserPeek(p).kind) {
 	case WlKind_Number: return wlParserTake(p);
 	case WlKind_Symbol: {
-		WlSyntaxCall call = {0};
-		call.name = wlParserMatch(p, WlKind_Symbol);
-		call.parenOpen = wlParserMatch(p, WlKind_TkParenOpen);
-		if (wlParserPeek(p).kind != WlKind_TkParenClose) {
-			call.arg = wlParserMatch(p, WlKind_String);
+		WlToken symbol = wlParserMatch(p, WlKind_Symbol);
+
+		if (wlParserPeek(p).kind == WlKind_TkParenOpen) {
+
+			WlSyntaxCall call = {0};
+			call.name = symbol;
+			call.parenOpen = wlParserMatch(p, WlKind_TkParenOpen);
+			if (wlParserPeek(p).kind != WlKind_TkParenClose) {
+				call.arg = wlParserMatch(p, WlKind_String);
+			} else {
+				call.arg = (WlToken){.kind = WlKind_Missing};
+			}
+			call.parenClose = wlParserMatch(p, WlKind_TkParenClose);
+
+			WlSyntaxCall *callp = arenaMalloc(sizeof(WlSyntaxCall), &p->arena);
+			*callp = call;
+
+			return (WlToken){.kind = WlKind_StCall, .valuePtr = callp};
 		} else {
-			call.arg = (WlToken){.kind = WlKind_Missing};
+			symbol.kind = WlKind_StRef;
+			return symbol;
 		}
-		call.parenClose = wlParserMatch(p, WlKind_TkParenClose);
-
-		WlSyntaxCall *callp = arenaMalloc(sizeof(WlSyntaxCall), &p->arena);
-		*callp = call;
-
-		return (WlToken){.kind = WlKind_StCall, .valuePtr = callp};
 	}
 	default: PANIC("unexpected token kind %s", WlKindText[wlParserPeek(p).kind]); break;
 	}
@@ -577,6 +622,7 @@ void wlParseFunction(WlParser *p)
 	fn.type = wlParserMatch(p, WlKind_Symbol);
 	fn.name = wlParserMatch(p, WlKind_Symbol);
 	fn.parenOpen = wlParserMatch(p, WlKind_TkParenOpen);
+	fn.parameterList = wlParseParameterList(p);
 	fn.parenClose = wlParserMatch(p, WlKind_TkParenClose);
 	fn.body = wlParseBlock(p);
 
@@ -618,13 +664,13 @@ void wlPrint(WlToken tk)
 {
 	if (tk.kind < WlKind_Syntax_Start) {
 		if (tk.kind == WlKind_String) {
-			printf("%s::\"%.*s\"", WlKindText[tk.kind], STRPRINT(tk.valueStr));
+			printf("%s::\"%.*s\" ", WlKindText[tk.kind], STRPRINT(tk.valueStr));
 		} else if (tk.kind == WlKind_Symbol) {
-			printf("%s::%.*s", WlKindText[tk.kind], STRPRINT(tk.valueStr));
+			printf("%s::%.*s ", WlKindText[tk.kind], STRPRINT(tk.valueStr));
 		} else if (tk.kind == WlKind_Number) {
-			printf("%s::%d", WlKindText[tk.kind], tk.valueNum);
+			printf("%s::%d ", WlKindText[tk.kind], tk.valueNum);
 		} else {
-			printf("%s", WlKindText[tk.kind]);
+			printf("%s ", WlKindText[tk.kind]);
 		}
 		return;
 	}
@@ -651,14 +697,11 @@ void wlPrint(WlToken tk)
 		WlSyntaxFunction *fn = tk.valuePtr;
 		if (fn->export.kind == WlKind_KwExport) {
 			wlPrint(fn->export);
-			printf(" ");
 		}
 		wlPrint(fn->type);
-		printf(" ");
 		wlPrint(fn->name);
 		wlPrint(fn->parenOpen);
 		wlPrint(fn->parenClose);
-		printf(" ");
 		wlPrintBlock(fn->body);
 	} break;
 	case WlKind_StCall: {
@@ -667,6 +710,9 @@ void wlPrint(WlToken tk)
 		wlPrint(call.parenOpen);
 		wlPrint(call.arg);
 		wlPrint(call.parenClose);
+	} break;
+	case WlKind_StRef: {
+		printf("<ref>::%.*s ", STRPRINT(tk.valueStr));
 	} break;
 
 	default: PANIC("Unhandled print function for %s %d", WlKindText[tk.kind], tk.kind); break;

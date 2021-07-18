@@ -40,6 +40,7 @@ typedef enum
 	WlBKind_Function,
 	WlBKind_Block,
 	WlBKind_Call,
+	WlBKind_Ref,
 	WlBKind_Return,
 	WlBKind_BinaryExpression,
 	WlBKind_StringLiteral,
@@ -56,6 +57,22 @@ typedef enum
 	WlBOperator_Equal,
 	WlBOperator_NotEqual,
 } WlBOperator;
+
+typedef enum
+{
+	WlSFlag_None = 0,
+	WlSFlag_Constant = 1,
+} WlSymbolFlags;
+
+typedef struct {
+	int index;
+	Str name;
+	WlSymbolFlags flags;
+} WlSymbol;
+
+typedef struct {
+	List(WlSymbol) symbols;
+} WlScope;
 
 typedef struct {
 	WlBKind kind;
@@ -77,6 +94,7 @@ typedef struct {
 } WlBoundBinaryExpression;
 
 typedef struct {
+	WlScope *scope;
 	WlbNode *nodes;
 	int nodeCount;
 } WlBoundBlock;
@@ -86,7 +104,9 @@ typedef struct {
 } WlBoundReturn;
 
 typedef struct {
+	WlScope *scope;
 	bool exported;
+	int paramCount;
 	WlBType returnType;
 	Str name;
 	WlbNode body;
@@ -99,7 +119,36 @@ typedef struct {
 	WlBoundFunction *functions;
 	int functionCount;
 	ArenaAllocator arena;
+	WlScope *currentScope;
 } WlBinder;
+
+WlSymbol *wlFindVariable(WlBinder *b, Str name);
+
+WlSymbol *wlPushVariable(WlBinder *b, Str name)
+{
+	WlSymbol *existing = wlFindVariable(b, name);
+	if (existing) PANIC("variable by name %.*s already exists");
+
+	List(WlSymbol) symbols = b->currentScope->symbols;
+	WlSymbol newSymbol = (WlSymbol){.name = name, .flags = WlSFlag_None, .index = listLen(symbols)};
+	listPush(&symbols, newSymbol);
+	b->currentScope->symbols = symbols;
+}
+
+WlSymbol *wlFindVariable(WlBinder *b, Str name)
+{
+	WlSymbol *found = NULL;
+
+	WlScope *s = b->currentScope;
+	for (int i = 0; i < listLen(s->symbols); i++) {
+		if (strEqual(name, s->symbols[i].name)) {
+			found = s->symbols + i;
+			break;
+		}
+	}
+
+	return found;
+}
 
 WlBOperator wlBindOperator(WlToken op)
 {
@@ -149,6 +198,18 @@ WlbNode wlBindExpression(WlBinder *b, WlToken expression)
 		return (WlbNode){.kind = WlBKind_Call, .data = bcallp};
 	}
 
+	case WlKind_StRef: {
+		Str name = expression.valueStr;
+		// NOTE: the reference will be lost when the list reallocates
+		// we should either store symbol pointers and allocate symbols in the arena
+		// or determine the amount of symbols in the scope ahead of time
+		WlSymbol *variable = wlFindVariable(b, name);
+
+		if (!variable) PANIC("failed to find variable by name %.*s", STRPRINT(name));
+
+		return (WlbNode){.kind = WlBKind_Ref, .data = variable};
+	}
+
 	default: PANIC("Unhandled expression kind %s", WlKindText[expression.kind]);
 	}
 }
@@ -180,20 +241,34 @@ WlbNode wlBindStatement(WlBinder *b, WlToken statement)
 	}
 }
 
-WlbNode wlBindBlock(WlBinder *b, WlSyntaxBlock body)
+WlScope *WlCreateScope(WlBinder *b)
 {
-	WlBoundBlock blk = {0};
-	blk.nodeCount = body.statementCount;
-	size_t foo = sizeof(WlbNode) * blk.nodeCount;
+	WlScope *scope = arenaMalloc(sizeof(WlScope), &b->arena);
+	*scope = (WlScope){.symbols = listNew()};
+	b->currentScope = scope;
+	return scope;
+};
+
+WlbNode wlBindBlock(WlBinder *b, WlSyntaxBlock body, bool createScope)
+{
+	WlBoundBlock *blk = arenaMalloc(sizeof(WlBoundBlock), &b->arena);
+	*blk = (WlBoundBlock){0};
+	if (createScope) {
+		blk->scope = WlCreateScope(b);
+		b->currentScope = blk->scope;
+	} else {
+		blk->scope = b->currentScope;
+	}
+
+	blk->nodeCount = body.statementCount;
+	size_t foo = sizeof(WlbNode) * blk->nodeCount;
 	WlbNode *nodes = arenaMalloc(foo, &b->arena);
 	for (int i = 0; i < body.statementCount; i++) {
 		nodes[i] = wlBindStatement(b, body.statements[i]);
 	}
-	blk.nodes = nodes;
-	WlBoundBlock *blkp = arenaMalloc(sizeof(WlBoundBlock), &b->arena);
-	*blkp = blk;
+	blk->nodes = nodes;
 
-	return (WlbNode){.kind = WlBKind_Block, .data = blkp};
+	return (WlbNode){.kind = WlBKind_Block, .data = blk};
 }
 
 WlBinder wlBind(WlToken *declarations, int declarationCount)
@@ -214,11 +289,24 @@ WlBinder wlBind(WlToken *declarations, int declarationCount)
 
 		if (b.functionCount >= 0xFF) PANIC("Too many bound functions");
 
+		WlScope *s = WlCreateScope(&b);
+
+		int paramCount = 0;
+		for (int i = 0; i < listLen(fn.parameterList); i += 2) {
+			paramCount++;
+			WlToken paramToken = fn.parameterList[i];
+			WlSyntaxParameter param = *(WlSyntaxParameter *)paramToken.valuePtr;
+
+			wlPushVariable(&b, param.name.valueStr);
+		}
+
 		b.functions[b.functionCount++] = (WlBoundFunction){
+			.scope = s,
+			.paramCount = paramCount,
 			.exported = fn.export.kind == WlKind_KwExport,
 			.returnType = wlBindType(fn.type),
 			.name = fn.name.valueStr,
-			.body = wlBindBlock(&b, fn.body),
+			.body = wlBindBlock(&b, fn.body, false),
 		};
 	}
 

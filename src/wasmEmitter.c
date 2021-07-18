@@ -43,6 +43,10 @@ void emitExpression(WlbNode expression, DynamicBuf *opcodes)
 	case WlBKind_NumberLiteral: {
 		wasmPushOpi32Const(opcodes, expression.dataNum);
 	} break;
+	case WlBKind_Ref: {
+		WlSymbol *sym = expression.data;
+		wasmPushOpLocalGet(opcodes, sym->index);
+	} break;
 	default: PANIC("Unhandled expression kind %d", expression.kind); break;
 	}
 }
@@ -91,7 +95,11 @@ Buf emitWasm(WlBinder *b)
 	for (int i = 0; i < b->functionCount; i++) {
 		WlBoundFunction fn = b->functions[i];
 
-		Buf args = BUFEMPTY;
+		DynamicBuf args = dynamicBufCreate();
+		for (int i = 0; i < fn.paramCount; i++) {
+			dynamicBufPush(&args, WasmType_I32);
+		}
+
 		DynamicBuf rets = dynamicBufCreate();
 		WasmType returnType = boundTypeToWasm(fn.returnType);
 		if (returnType != WasmType_Void) dynamicBufPush(&rets, returnType);
@@ -106,8 +114,8 @@ Buf emitWasm(WlBinder *b)
 			emitStatement(statementNode, &opcodes);
 		}
 
-		wasmModuleAddFunction(&source, fn.exported ? fn.name : STREMPTY, args, dynamicBufToBuf(rets), locals,
-							  dynamicBufToBuf(opcodes));
+		wasmModuleAddFunction(&source, fn.exported ? fn.name : STREMPTY, dynamicBufToBuf(args), dynamicBufToBuf(rets),
+							  locals, dynamicBufToBuf(opcodes));
 	}
 
 	Buf wasm = wasmModuleCompile(source);
