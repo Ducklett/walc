@@ -139,6 +139,8 @@ typedef struct {
 	int index;
 } WlLexer;
 
+bool isNewline(char c) { return c == '\r' || c == '\n'; }
+bool isEndOfLine(char c) { return c == '\0' || c == '\r' || c == '\n'; }
 bool isWhitespace(char c) { return c == ' ' || c == '\t' || c == '\r' || c == '\n'; }
 bool isDigit(char c) { return c >= '0' && c <= '9'; }
 bool isBinaryDigit(char c) { return c == '0' || c == '1'; }
@@ -183,7 +185,42 @@ void wlLexerTrim(WlLexer *l)
 
 WlToken wlLexerLexToken(WlLexer *l)
 {
+lexStart:
 	wlLexerTrim(l);
+
+	// skip single line comments
+	if (wlLexerCurrent(l) == '/' && wlLexerLookahead(l, 1) == '/') {
+		while (!isEndOfLine(wlLexerCurrent(l))) {
+			l->index++;
+		}
+		while (isNewline(wlLexerCurrent(l))) {
+			l->index++;
+		}
+		goto lexStart;
+	}
+	// skip multi line comments
+	if (wlLexerCurrent(l) == '/' && wlLexerLookahead(l, 1) == '*') {
+		int level = 0;
+		l->index += 2;
+		while (true) {
+			if (wlLexerCurrent(l) == '\0') PANIC("Unexpected EOF");
+
+			if (wlLexerCurrent(l) == '/' && wlLexerLookahead(l, 1) == '*') {
+				level++;
+				l->index += 2;
+			} else if (wlLexerCurrent(l) == '*' && wlLexerLookahead(l, 1) == '/') {
+				level--;
+				l->index += 2;
+				if (level == -1) {
+					break;
+				}
+			} else {
+				l->index += 1;
+			}
+		}
+		goto lexStart;
+	}
+
 	char current = wlLexerCurrent(l);
 
 	if (!current) return wlLexerBasic(l, 0, WlKind_EOF);

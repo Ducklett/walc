@@ -110,6 +110,35 @@ void test_token_lexing()
 			wlLexerFree(&l);
 		}
 	}
+
+	{
+		test_that("lexer skips single line comments")
+		{
+			Str source = STR("// this is a comment\n10");
+			WlLexer l = wlLexerCreate(source);
+
+			List(WlToken) tokens = wlLexerLexTokens(&l);
+			test_assert("finds a single token", listLen(tokens) == 1);
+			test_assert("token is a number", tokens[0].kind = WlKind_Number);
+
+			wlLexerFree(&l);
+		}
+
+		test_that("lexer skips multi line comments")
+		{
+			Str source =
+				STR("/* this is a multi line\n\ncomment comment */ \n"
+					"10\n/*another /*nested\n*/ one*/\n");
+
+			WlLexer l = wlLexerCreate(source);
+
+			List(WlToken) tokens = wlLexerLexTokens(&l);
+			test_assert("finds a single token", listLen(tokens) == 1);
+			test_assert("token is a number", tokens[0].kind = WlKind_Number);
+
+			wlLexerFree(&l);
+		}
+	}
 }
 
 typedef struct {
