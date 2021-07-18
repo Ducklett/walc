@@ -609,12 +609,24 @@ WlToken wlParseStatement(WlParser *p)
 
 		return (WlToken){.kind = WlKind_StReturnStatement, .valuePtr = stp};
 	} else {
-		WlExpressionStatement st = {0};
-		st.expression = wlParseExpression(p);
-		st.semicolon = wlParserMatch(p, WlKind_TkSemicolon);
-		WlExpressionStatement *stp = arenaMalloc(sizeof(WlExpressionStatement), &p->arena);
-		*stp = st;
-		return (WlToken){.kind = WlKind_StExpressionStatement, .valuePtr = stp};
+		WlToken expression = wlParseExpression(p);
+		if (wlParserPeek(p).kind == WlKind_TkCurlyClose) {
+			// implicit return statement
+			WlReturnStatement st = {0};
+			st.returnKeyword = (WlToken){.kind = WlKind_Missing};
+			st.expression = expression;
+			st.semicolon = (WlToken){.kind = WlKind_Missing};
+			WlReturnStatement *stp = arenaMalloc(sizeof(WlReturnStatement), &p->arena);
+			*stp = st;
+			return (WlToken){.kind = WlKind_StReturnStatement, .valuePtr = stp};
+		} else {
+			WlExpressionStatement st = {0};
+			st.expression = expression;
+			st.semicolon = wlParserMatch(p, WlKind_TkSemicolon);
+			WlExpressionStatement *stp = arenaMalloc(sizeof(WlExpressionStatement), &p->arena);
+			*stp = st;
+			return (WlToken){.kind = WlKind_StExpressionStatement, .valuePtr = stp};
+		}
 	}
 }
 
