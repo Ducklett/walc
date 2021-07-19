@@ -1,5 +1,5 @@
 
-import u0 print(str msg);
+import print(str msg);
 
 export i32 double(i32 a) { return a * 2; }
 export i32 halve(i32 a) { return a / 2; }
@@ -18,6 +18,6 @@ export f64 testFloat2() { 10 / 3 }
 export f32 testFloat3() { 1.2 }
 export f32 testFloat4() { 10 / 3 }
 
-export u0 main() {
+export main() {
     print("expressions!");
 }

@@ -1,9 +1,9 @@
-import u0 print(str msg);
+import print(str msg);
 
-u0 callme() {
+callme() {
     print("called by main!");
 }
 
-export u0 main() {
+export main() {
     callme();
 }

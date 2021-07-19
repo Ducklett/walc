@@ -672,7 +672,15 @@ void wlParseImport(WlParser *p)
 
 	im.import = wlParserMatch(p, WlKind_KwImport);
 	im.type = wlParserMatch(p, WlKind_Symbol);
-	im.name = wlParserMatch(p, WlKind_Symbol);
+
+	// infer type as u0
+	if (wlParserPeek(p).kind == WlKind_TkParenOpen) {
+		im.name = im.type;
+		im.type.kind = WlKind_Missing;
+	} else {
+		im.name = wlParserMatch(p, WlKind_Symbol);
+	}
+
 	im.parenOpen = wlParserMatch(p, WlKind_TkParenOpen);
 	im.parameterList = wlParseParameterList(p);
 	im.parenClose = wlParserMatch(p, WlKind_TkParenClose);
@@ -692,7 +700,15 @@ void wlParseFunction(WlParser *p)
 	}
 
 	fn.type = wlParserMatch(p, WlKind_Symbol);
-	fn.name = wlParserMatch(p, WlKind_Symbol);
+
+	// infer type as u0
+	if (wlParserPeek(p).kind == WlKind_TkParenOpen) {
+		fn.name = fn.type;
+		fn.type.kind = WlKind_Missing;
+	} else {
+		fn.name = wlParserMatch(p, WlKind_Symbol);
+	}
+
 	fn.parenOpen = wlParserMatch(p, WlKind_TkParenOpen);
 	fn.parameterList = wlParseParameterList(p);
 	fn.parenClose = wlParserMatch(p, WlKind_TkParenClose);

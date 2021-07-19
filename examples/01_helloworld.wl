@@ -6,8 +6,8 @@
     comments can also be nested so you can /*/**/*/ // // // all you want
 */
 
-import u0 print(str msg);
+import print(str msg);
 
-export u0 main() {
+export main() {
     print("Hello wasm 🎉");
 }

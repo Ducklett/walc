@@ -21,12 +21,14 @@ char *WlBTypeText[] = {
 
 WlBType wlBindType(WlToken tk)
 {
+	if (tk.kind == WlKind_Missing) return WlBType_u0;
+
 	assert(tk.kind == WlKind_Symbol);
 
 	for (int i = 0; i < WlBType_end; i++) {
-		Str fuck = strFromCstr(WlBTypeText[i]);
 		// TODO: cache Str
-		if (strEqual(tk.valueStr, fuck)) {
+		Str typeString = strFromCstr(WlBTypeText[i]);
+		if (strEqual(tk.valueStr, typeString)) {
 			return i;
 		}
 	}
