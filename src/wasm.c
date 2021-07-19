@@ -176,7 +176,7 @@ int wasmModuleAddImport(Wasm *module, Str name, Buf args, Buf rets)
 
 // adds a new function to the module
 // the provided buffers shouldn't be freed until you are done with the {Wasm} object
-void wasmModuleAddFunction(Wasm *module, Str name, Buf args, Buf rets, Buf locals, Buf opcodes)
+int wasmModuleAddFunction(Wasm *module, Str name, Buf args, Buf rets, Buf locals, Buf opcodes)
 {
 	if (name.len != 0) module->exportCount++;
 
@@ -192,6 +192,7 @@ void wasmModuleAddFunction(Wasm *module, Str name, Buf args, Buf rets, Buf local
 		.opcodesCount = opcodes.len,
 	};
 	listPush(&module->bodies, fun);
+	return id;
 }
 
 static inline u8 *wasmReserveByte(DynamicBuf *buf) { return buf->buf + buf->len++; }

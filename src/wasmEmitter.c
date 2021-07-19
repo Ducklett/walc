@@ -16,7 +16,7 @@ WasmType boundTypeToWasm(WlBType t)
 }
 
 Wasm source;
-int fnPrint;
+int varOffset;
 
 void emitOperator(WlBType type, WlBOperator op, DynamicBuf *opcodes)
 {
@@ -96,8 +96,15 @@ void emitExpression(WlbNode expression, DynamicBuf *opcodes)
 		default: PANIC("UnHandled constant type %d", expression.type);
 		}
 	} break;
+	case WlBKind_StringLiteral: {
+		int offset = wasmModuleAddData(&source, STRTOBUF(expression.dataStr));
+		int length = expression.dataStr.len;
+		wasmPushOpi32Const(opcodes, offset);
+		wasmPushOpi32Const(opcodes, length);
+	} break;
 	case WlBKind_Ref: {
 		WlSymbol *sym = expression.data;
+		printf("finna get local %d\n", sym->index);
 		wasmPushOpLocalGet(opcodes, sym->index);
 	} break;
 	default: PANIC("Unhandled expression kind %d", expression.kind); break;
@@ -117,18 +124,11 @@ void emitStatement(WlbNode statement, DynamicBuf *opcodes)
 	} break;
 	case WlBKind_Call: {
 		WlBoundCallExpression call = *(WlBoundCallExpression *)statement.data;
-		WlbNode arg = call.arg;
-		if (arg.kind == WlBKind_StringLiteral) {
-			int offset = wasmModuleAddData(&source, STRTOBUF(arg.dataStr));
-			int length = arg.dataStr.len;
-			printf("str dims %d %d\n", offset, length);
-			wasmPushOpi32Const(opcodes, offset);
-			wasmPushOpi32Const(opcodes, length);
-			wasmPushOpCall(opcodes, fnPrint);
-		} else {
-			printf("arg kind %d\n", arg.kind);
-			PANIC("Print expects a string");
+		for (int i = 0; i < listLen(call.args); i++) {
+			emitExpression(call.args[i], opcodes);
 		}
+
+		wasmPushOpCall(opcodes, call.function->index);
 	} break;
 	default: PANIC("Unhandled statement kind %d", statement.kind); break;
 	}
@@ -140,37 +140,53 @@ Buf emitWasm(WlBinder *b)
 
 	wasmModuleAddMemory(&source, STR("memory"), 1, 2);
 
-	u8 args[] = {WasmType_I32, WasmType_I32};
+	// u8 args[] = {WasmType_I32, WasmType_I32};
 
-	// import print (hardcoded for now)
-	fnPrint = wasmModuleAddImport(&source, STR("print"), BUF(args), BUFEMPTY);
+	// // import print (hardcoded for now)
+	// fnPrint = wasmModuleAddImport(&source, STR("print"), BUF(args), BUFEMPTY);
 
 	int functionCount = listLen(b->functions);
 	for (int i = 0; i < functionCount; i++) {
-		WlBoundFunction fn = b->functions[i];
+		varOffset = 0;
+		WlBoundFunction *fn = b->functions[i];
 
 		DynamicBuf args = dynamicBufCreate();
-		for (int i = 0; i < fn.paramCount; i++) {
-			WlSymbol param = fn.scope->symbols[i];
-			dynamicBufPush(&args, boundTypeToWasm(param.type));
+		for (int i = 0; i < fn->paramCount; i++) {
+			WlSymbol *param = fn->scope->symbols[i];
+			param->index = varOffset;
+			if (param->type == WlBType_str) {
+				dynamicBufPush(&args, WasmType_I32);
+				dynamicBufPush(&args, WasmType_I32);
+				varOffset += 2;
+			} else {
+				dynamicBufPush(&args, boundTypeToWasm(param->type));
+				varOffset += 1;
+			}
 		}
 
 		DynamicBuf rets = dynamicBufCreate();
-		WasmType returnType = boundTypeToWasm(fn.returnType);
+		WasmType returnType = boundTypeToWasm(fn->returnType);
 		if (returnType != WasmType_Void) dynamicBufPush(&rets, returnType);
 
-		Buf locals = BUFEMPTY;
-		DynamicBuf opcodes = dynamicBufCreate();
+		if (fn->symbol->flags & WlSFlag_Extern) {
+			int index = wasmModuleAddImport(&source, fn->name, dynamicBufToBuf(args), dynamicBufToBuf(rets));
+			fn->symbol->index = index;
+		} else {
 
-		WlbNode bodyNode = fn.body;
-		WlBoundBlock body = *(WlBoundBlock *)bodyNode.data;
-		for (int j = 0; j < body.nodeCount; j++) {
-			WlbNode statementNode = body.nodes[j];
-			emitStatement(statementNode, &opcodes);
+			Buf locals = BUFEMPTY;
+			DynamicBuf opcodes = dynamicBufCreate();
+
+			WlbNode bodyNode = fn->body;
+			WlBoundBlock body = *(WlBoundBlock *)bodyNode.data;
+			for (int j = 0; j < body.nodeCount; j++) {
+				WlbNode statementNode = body.nodes[j];
+				emitStatement(statementNode, &opcodes);
+			}
+
+			int index = wasmModuleAddFunction(&source, fn->exported ? fn->name : STREMPTY, dynamicBufToBuf(args),
+											  dynamicBufToBuf(rets), locals, dynamicBufToBuf(opcodes));
+			fn->symbol->index = index;
 		}
-
-		wasmModuleAddFunction(&source, fn.exported ? fn.name : STREMPTY, dynamicBufToBuf(args), dynamicBufToBuf(rets),
-							  locals, dynamicBufToBuf(opcodes));
 	}
 
 	Buf wasm = wasmModuleCompile(source);

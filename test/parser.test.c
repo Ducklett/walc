@@ -170,7 +170,7 @@ void test_expression_parsing()
 
 		WlToken t = wlParseExpression(&p);
 		test_assert("call expression is found", t.kind == WlKind_StCall);
-		test_assert("No arguments are found", ((WlSyntaxCall *)t.valuePtr)->arg.kind == WlKind_Missing);
+		test_assert("No arguments are found", listLen(((WlSyntaxCall *)t.valuePtr)->args) == 0);
 
 		wlParserFree(&p);
 	}

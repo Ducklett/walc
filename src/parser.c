@@ -410,7 +410,7 @@ typedef struct {
 typedef struct {
 	WlToken name;
 	WlToken parenOpen;
-	WlToken arg;
+	List(WlToken) args;
 	WlToken parenClose;
 } WlSyntaxCall;
 
@@ -489,6 +489,8 @@ void wlParserAddTopLevelStatement(WlParser *p, WlToken tk)
 	p->topLevelDeclarations[p->topLevelCount++] = tk;
 }
 
+WlToken wlParseExpression(WlParser *p);
+
 WlToken wlParseParameter(WlParser *p)
 {
 	WlSyntaxParameter param;
@@ -516,24 +518,35 @@ List(WlToken) wlParseParameterList(WlParser *p)
 	return list;
 }
 
+List(WlToken) wlParseArgumentList(WlParser *p)
+{
+	List(WlToken) list = listNew();
+
+	while (true) {
+		if (wlParserPeek(p).kind == WlKind_TkParenClose) break;
+		WlToken arg = wlParseExpression(p);
+		listPush(&list, arg);
+
+		if (wlParserPeek(p).kind != WlKind_TkComma) break;
+		WlToken delim = wlParserMatch(p, WlKind_TkComma);
+		listPush(&list, delim);
+	}
+	return list;
+}
+
 WlToken wlParsePrimaryExpression(WlParser *p)
 {
 	switch (wlParserPeek(p).kind) {
 	case WlKind_Number: return wlParserTake(p);
 	case WlKind_FloatNumber: return wlParserTake(p);
+	case WlKind_String: return wlParserTake(p);
 	case WlKind_Symbol: {
 		WlToken symbol = wlParserMatch(p, WlKind_Symbol);
-
 		if (wlParserPeek(p).kind == WlKind_TkParenOpen) {
-
 			WlSyntaxCall call = {0};
 			call.name = symbol;
 			call.parenOpen = wlParserMatch(p, WlKind_TkParenOpen);
-			if (wlParserPeek(p).kind != WlKind_TkParenClose) {
-				call.arg = wlParserMatch(p, WlKind_String);
-			} else {
-				call.arg = (WlToken){.kind = WlKind_Missing};
-			}
+			call.args = wlParseArgumentList(p);
 			call.parenClose = wlParserMatch(p, WlKind_TkParenClose);
 
 			WlSyntaxCall *callp = arenaMalloc(sizeof(WlSyntaxCall), &p->arena);
@@ -740,7 +753,9 @@ void wlPrint(WlToken tk)
 		WlSyntaxCall call = *(WlSyntaxCall *)tk.valuePtr;
 		wlPrint(call.name);
 		wlPrint(call.parenOpen);
-		wlPrint(call.arg);
+		for (int i = 0; i < listLen(call.args); i++) {
+			wlPrint(call.args[i]);
+		}
 		wlPrint(call.parenClose);
 	} break;
 	case WlKind_StRef: {

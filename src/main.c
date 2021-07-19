@@ -2,9 +2,9 @@
 
 int main(int argc, char **argv)
 {
-	Str source = STR("export i32 main() { return 10+20*3/2; }");
+	Str source;
 
-	fileReadAllText("examples/02_expressions.wl", &source) || PANIC("Failed to open file");
+	fileReadAllText("examples/03_functions.wl", &source) || PANIC("Failed to open file");
 
 	printf("source %.*s\n", STRPRINT(source));
 
@@ -19,8 +19,8 @@ int main(int argc, char **argv)
 
 	int functionCount = listLen(b.functions);
 	for (int i = 0; i < functionCount; i++) {
-		WlBoundFunction fn = b.functions[i];
-		printf("%s%s %.*s(){}\n", fn.exported ? "export " : "", WlBTypeText[fn.returnType], STRPRINT(fn.name));
+		WlBoundFunction *fn = b.functions[i];
+		printf("%s%s %.*s(){}\n", fn->exported ? "export " : "", WlBTypeText[fn->returnType], STRPRINT(fn->name));
 	}
 
 	Buf wasm = emitWasm(&b);

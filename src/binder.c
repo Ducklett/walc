@@ -62,18 +62,33 @@ typedef enum
 typedef enum
 {
 	WlSFlag_None = 0,
-	WlSFlag_Constant = 1,
+	WlSFlag_TypeBits = 7,
+
+	WlSFlag_Any = 0,
+	WlSFlag_Variable = 1,
+	WlSFlag_Function = 2,
+	WlSFlag_Struct = 3,
+	WlSFlag_Namespace = 4,
+
+	WlSFlag_Constant = 8,
+	WlSFlag_Extern = 16,
 } WlSymbolFlags;
+
+struct WlBoundFunction;
 
 typedef struct {
 	int index;
 	Str name;
 	WlBType type;
 	WlSymbolFlags flags;
+	union {
+		struct WlBoundFunction *function;
+	};
 } WlSymbol;
 
-typedef struct {
-	List(WlSymbol) symbols;
+typedef struct WlScope {
+	List(WlSymbol *) symbols;
+	struct WlScope *parentScope;
 } WlScope;
 
 typedef struct {
@@ -88,7 +103,8 @@ typedef struct {
 } WlbNode;
 
 typedef struct {
-	WlbNode arg;
+	WlSymbol *function;
+	List(WlbNode) args;
 } WlBoundCallExpression;
 
 typedef struct {
@@ -107,51 +123,69 @@ typedef struct {
 	WlbNode expression;
 } WlBoundReturn;
 
-typedef struct {
+typedef struct WlBoundFunction {
 	WlScope *scope;
 	bool exported;
 	int paramCount;
 	WlBType returnType;
 	Str name;
 	WlbNode body;
+	WlSymbol *symbol;
 } WlBoundFunction;
 
 typedef struct {
 	WlToken *unboundDeclarations;
 	int unboundCount;
 
-	List(WlBoundFunction) functions;
+	List(WlBoundFunction *) functions;
 	ArenaAllocator arena;
-	WlScope *currentScope;
+	List(WlScope *) scopes;
 	WlBType currentReturnType;
+	ArenaAllocator arena;
 } WlBinder;
 
-WlSymbol *wlFindVariable(WlBinder *b, Str name);
+WlSymbol *wlFindSymbol(WlBinder *b, Str name, WlSymbolFlags flags, bool recurse);
 
-WlSymbol *wlPushVariable(WlBinder *b, Str name, WlBType type)
+WlSymbol *wlPushSymbol(WlBinder *b, Str name, WlBType type, WlSymbolFlags flags)
 {
-	WlSymbol *existing = wlFindVariable(b, name);
+	WlSymbol *existing = wlFindSymbol(b, name, WlSFlag_None, false);
 	if (existing) PANIC("variable by name %.*s already exists");
 
-	List(WlSymbol) symbols = b->currentScope->symbols;
-	WlSymbol newSymbol = (WlSymbol){.name = name, .type = type, .flags = WlSFlag_None, .index = listLen(symbols)};
+	List(WlSymbol *) symbols = listPeek(&b->scopes)->symbols;
+
+	WlSymbol *newSymbol = arenaMalloc(sizeof(WlSymbol), &b->arena);
+	*newSymbol = (WlSymbol){.name = name, .type = type, .flags = flags, .index = 0};
 	listPush(&symbols, newSymbol);
-	b->currentScope->symbols = symbols;
+	listPeek(&b->scopes)->symbols = symbols;
+
+	return newSymbol;
 }
 
-WlSymbol *wlFindVariable(WlBinder *b, Str name)
+WlSymbol *wlFindSymbolInScope(WlBinder *b, WlScope *s, Str name, WlSymbolFlags flags, bool recurse)
 {
 	WlSymbol *found = NULL;
 
-	WlScope *s = b->currentScope;
+	WlSymbolFlags type = flags & WlSFlag_TypeBits;
+
 	for (int i = 0; i < listLen(s->symbols); i++) {
-		if (strEqual(name, s->symbols[i].name)) {
-			found = s->symbols + i;
+		WlSymbol *smb = s->symbols[i];
+		if (strEqual(name, smb->name) && (!type || type == (smb->flags & WlSFlag_TypeBits))) {
+			found = smb;
 			break;
 		}
 	}
 
+	if (!found && recurse && s->parentScope) {
+		return wlFindSymbolInScope(b, s->parentScope, name, flags, true);
+	}
+
 	return found;
+}
+
+WlSymbol *wlFindSymbol(WlBinder *b, Str name, WlSymbolFlags flags, bool recurse)
+{
+	WlScope *s = listPeek(&b->scopes);
+	return wlFindSymbolInScope(b, s, name, flags, recurse);
 }
 
 WlBOperator wlBindOperator(WlToken op)
@@ -182,11 +216,14 @@ WlbNode wlBindExpression(WlBinder *b, WlToken expression, WlBType type)
 		} else {
 			return (WlbNode){.kind = WlBKind_NumberLiteral, .dataNum = expression.valueNum, .type = type};
 		}
-	}
+	} break;
 	case WlKind_FloatNumber: {
 		if (!wlIsFloatType(type)) PANIC("Expected type %d but got float literal", type);
 		return (WlbNode){.kind = WlBKind_NumberLiteral, .dataFloat = expression.valueFloat, .type = type};
-	}
+	} break;
+	case WlKind_String: {
+		return (WlbNode){.kind = WlBKind_StringLiteral, .dataStr = expression.valueStr, .type = WlBType_str};
+	} break;
 	case WlKind_StBinaryExpression: {
 		WlBinaryExpression ex = *(WlBinaryExpression *)expression.valuePtr;
 		WlBoundBinaryExpression bex;
@@ -205,11 +242,22 @@ WlbNode wlBindExpression(WlBinder *b, WlToken expression, WlBType type)
 		WlSyntaxCall call = *(WlSyntaxCall *)expression.valuePtr;
 
 		WlBoundCallExpression bcall = {0};
-		if (call.arg.kind == WlKind_String) {
-			bcall.arg = (WlbNode){.kind = WlBKind_StringLiteral, .dataStr = call.arg.valueStr, .type = WlBType_str};
-		} else {
-			bcall.arg = (WlbNode){.kind = WlKind_Missing, .data = NULL, .type = WlBType_unknown};
+		WlSymbol *function = wlFindSymbol(b, call.name.valueStr, WlSFlag_Function, true);
+		List(WlbNode) args = listNew();
+		int argLen = (listLen(call.args) + 1) / 2;
+
+		int paramCount;
+		if (!function) PANIC("Failed to find function by name %.*s", STRPRINT(call.name.valueStr));
+
+		int expectedArgLen = function->function->paramCount;
+		if (argLen != expectedArgLen) PANIC("Expected %d arguments but got %d", expectedArgLen, argLen);
+
+		for (int i = 0; i < argLen; i++) {
+			WlbNode arg = wlBindExpression(b, call.args[i * 2], function->function->scope->symbols[i]->type);
+			listPush(&args, arg);
 		}
+		bcall.args = args;
+		bcall.function = function;
 
 		WlBoundCallExpression *bcallp = arenaMalloc(sizeof(WlBoundCallExpression), &b->arena);
 		*bcallp = bcall;
@@ -219,10 +267,7 @@ WlbNode wlBindExpression(WlBinder *b, WlToken expression, WlBType type)
 
 	case WlKind_StRef: {
 		Str name = expression.valueStr;
-		// NOTE: the reference will be lost when the list reallocates
-		// we should either store symbol pointers and allocate symbols in the arena
-		// or determine the amount of symbols in the scope ahead of time
-		WlSymbol *variable = wlFindVariable(b, name);
+		WlSymbol *variable = wlFindSymbol(b, name, WlSFlag_Variable, true);
 		if (type != variable->type) {
 			PANIC("Type mismatch! expected %d, got %d", type, variable->type);
 		}
@@ -266,23 +311,28 @@ WlbNode wlBindStatement(WlBinder *b, WlToken statement)
 	}
 }
 
-WlScope *WlCreateScope(WlBinder *b)
+WlScope *WlCreateAndPushScope(WlBinder *b)
 {
 	WlScope *scope = arenaMalloc(sizeof(WlScope), &b->arena);
-	*scope = (WlScope){.symbols = listNew()};
-	b->currentScope = scope;
+	*scope = (WlScope){.symbols = listNew(), .parentScope = listPeek(&b->scopes)};
+	listPush(&b->scopes, scope);
 	return scope;
 };
+
+void WlPopScope(WlBinder *b)
+{
+	listPop(&b->scopes);
+	assert(!listIsEmpty(b->scopes) && "The global scope shouldn't be popped");
+}
 
 WlbNode wlBindBlock(WlBinder *b, WlSyntaxBlock body, bool createScope)
 {
 	WlBoundBlock *blk = arenaMalloc(sizeof(WlBoundBlock), &b->arena);
 	*blk = (WlBoundBlock){0};
 	if (createScope) {
-		blk->scope = WlCreateScope(b);
-		b->currentScope = blk->scope;
+		blk->scope = WlCreateAndPushScope(b);
 	} else {
-		blk->scope = b->currentScope;
+		blk->scope = listPeek(&b->scopes);
 	}
 
 	blk->nodeCount = body.statementCount;
@@ -293,7 +343,29 @@ WlbNode wlBindBlock(WlBinder *b, WlSyntaxBlock body, bool createScope)
 	}
 	blk->nodes = nodes;
 
+	if (createScope) WlPopScope(b);
+
 	return (WlbNode){.kind = WlBKind_Block, .type = WlBType_u0, .data = blk};
+}
+
+void bindPrint(WlBinder *b)
+{
+	WlBoundFunction *bf = arenaMalloc(sizeof(WlBoundFunction), &b->arena);
+
+	WlSymbol *functionSymbol =
+		wlPushSymbol(b, STR("print"), WlBType_u0, WlSFlag_Function | WlSFlag_Constant | WlSFlag_Extern);
+	bf->symbol = functionSymbol;
+	bf->name = STR("print");
+	bf->returnType = WlBType_u0;
+	WlScope *s = WlCreateAndPushScope(b);
+	functionSymbol->function = bf;
+	bf->paramCount = 1;
+	bf->scope = s;
+
+	wlPushSymbol(b, STR("msg"), WlBType_str, WlSFlag_Variable | WlSFlag_Constant);
+	WlPopScope(b);
+
+	listPush(&b->functions, bf);
 }
 
 WlBinder wlBind(WlToken *declarations, int declarationCount)
@@ -302,8 +374,15 @@ WlBinder wlBind(WlToken *declarations, int declarationCount)
 		.unboundDeclarations = declarations,
 		.unboundCount = declarationCount,
 		.functions = listNew(),
+		.scopes = listNew(),
 		.arena = arenaCreate(),
 	};
+
+	//	 push the global scope
+	WlCreateAndPushScope(&b);
+
+	// hardcoded print extern for now
+	bindPrint(&b);
 
 	for (int i = 0; i < declarationCount; i++) {
 		WlToken tk = declarations[i];
@@ -311,30 +390,35 @@ WlBinder wlBind(WlToken *declarations, int declarationCount)
 
 		WlSyntaxFunction fn = *(WlSyntaxFunction *)(tk.valuePtr);
 
-		WlScope *s = WlCreateScope(&b);
+		WlBType returnType = wlBindType(fn.type);
+		b.currentReturnType = returnType;
+
+		WlSymbol *functionSymbol = wlPushSymbol(&b, fn.name.valueStr, returnType, WlSFlag_Function | WlSFlag_Constant);
+
+		WlScope *s = WlCreateAndPushScope(&b);
 
 		int paramCount = 0;
+
+		WlBoundFunction *bf = arenaMalloc(sizeof(WlBoundFunction), &b.arena);
+
+		functionSymbol->function = bf;
+		bf->symbol = functionSymbol;
+
 		for (int i = 0; i < listLen(fn.parameterList); i += 2) {
 			paramCount++;
 			WlToken paramToken = fn.parameterList[i];
 			WlSyntaxParameter param = *(WlSyntaxParameter *)paramToken.valuePtr;
 
 			WlBType paramType = wlBindType(param.type);
-			wlPushVariable(&b, param.name.valueStr, paramType);
+			wlPushSymbol(&b, param.name.valueStr, paramType, WlSFlag_Variable | WlSFlag_Constant);
 		}
 
-		WlBType returnType = wlBindType(fn.type);
-		b.currentReturnType = returnType;
+		bf->scope = s;
+		bf->paramCount = paramCount;
+		bf->exported = fn.export.kind == WlKind_KwExport, bf->returnType = returnType, bf->name = fn.name.valueStr,
+		bf->body = wlBindBlock(&b, fn.body, false), listPush(&b.functions, bf);
 
-		WlBoundFunction bf = {
-			.scope = s,
-			.paramCount = paramCount,
-			.exported = fn.export.kind == WlKind_KwExport,
-			.returnType = returnType,
-			.name = fn.name.valueStr,
-			.body = wlBindBlock(&b, fn.body, false),
-		};
-		listPush(&b.functions, bf);
+		WlPopScope(&b);
 	}
 
 	return b;

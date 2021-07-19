@@ -244,6 +244,7 @@ void listEnsureCapacity(void **lp, int size);
 #define listPush(lp, v) (listEnsureCapacity((void **)lp, sizeof(**lp)), (*(lp))[LISTHEAD(*(lp))->len++] = v, v)
 // pops value off the end of the list and returns it
 #define listPop(lp)	 (listLen(*(lp)) == 0 ? PANIC("Popping and empty stack") : (*(lp))[--LISTHEAD(*(lp))->len])
+#define listPeek(lp) (listLen(*(lp)) == 0 ? NULL : (*(lp))[LISTHEAD(*(lp))->len - 1])
 #define listFree(lp) (free(LISTHEAD(*(lp))), *(lp) = NULL)
 
 void listEnsureCapacity(void **lp, int size)
@@ -326,7 +327,8 @@ bool panic_impl(const char *msg, const char *filename, const int line, ...)
 
 // indicates that a piece of code hasn't been implemented yet
 // prints the TODO message and then kills the program
-void todo_impl(const char *msg, const char *filename, const int line, ...)
+// return false so it can be chained into expressions like foo && TODO()
+bool todo_impl(const char *msg, const char *filename, const int line, ...)
 {
 	printf("%s%s %d TODO: %s", TERMBOLD, filename, line, TERMCLEAR);
 	va_list args;
