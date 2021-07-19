@@ -56,6 +56,8 @@ typedef enum
 	WlKind_Syntax_Start,
 	WlKind_StFunction,
 	WlKind_StFunctionParameter,
+	WlKind_StVariableDeclaration,
+	WlKind_StVariableAssignement,
 	WlKind_StExpressionStatement,
 	WlKind_StReturnStatement,
 	WlKind_StCall,
@@ -83,9 +85,9 @@ char *WlKindText[] = {
 	"/",
 	"%",
 	"==",
+	"!=",
 	"<binary end>",
 	"=",
-	"!=",
 	"(",
 	")",
 	"{",
@@ -119,6 +121,8 @@ char *WlKindText[] = {
 	"<syntax start>",
 	"WlKind_StFunction",
 	"WlKind_StFunctionParameter",
+	"WlKind_StVariableDeclaration",
+	"WlKind_StVariableAssignement",
 	"WlKind_StExpressionStatement",
 	"WlKind_StReturnStatement",
 	"WlKind_StCall",
@@ -447,12 +451,24 @@ typedef struct {
 } WlSyntaxImport;
 
 typedef struct {
+	WlToken export;
+	WlToken type;
+	WlToken name;
+	WlToken equals;
+	WlToken initializer;
+	WlToken semicolon;
+} WlSyntaxVariableDeclaration;
+
+#define PARSERMAXLOOKAHEAD 8
+
+typedef struct {
 	WlLexer lexer;
 	WlToken *topLevelDeclarations;
 	int topLevelCount;
 	ArenaAllocator arena;
-	WlToken current;
-	bool hasToken;
+	WlToken tokens[PARSERMAXLOOKAHEAD];
+	int tokenIndex;
+	int lookaheadCount;
 } WlParser;
 
 WlParser wlParserCreate(Str source)
@@ -462,22 +478,30 @@ WlParser wlParserCreate(Str source)
 		.lexer = l,
 		.topLevelDeclarations = malloc(sizeof(WlToken) * 0xFF),
 		.arena = arenaCreate(),
-		.hasToken = false,
+		.tokens = {0},
+		.lookaheadCount = 0,
+		.tokenIndex = 0,
 	};
 }
 
-WlToken wlParserPeek(WlParser *p)
+WlToken wlParserLookahead(WlParser *p, int amount)
 {
-	if (p->hasToken) return p->current;
-	p->hasToken = true;
-	p->current = wlLexerLexToken(&p->lexer);
-	return p->current;
+	assert(amount <= PARSERMAXLOOKAHEAD);
+	while (amount >= p->lookaheadCount) {
+		int index = (p->tokenIndex + p->lookaheadCount) % PARSERMAXLOOKAHEAD;
+		p->lookaheadCount++;
+		p->tokens[index] = wlLexerLexToken(&p->lexer);
+	}
+	return p->tokens[(p->tokenIndex + amount) % PARSERMAXLOOKAHEAD];
 }
+
+WlToken wlParserPeek(WlParser *p) { return wlParserLookahead(p, 0); }
 
 WlToken wlParserTake(WlParser *p)
 {
-	WlToken t = p->hasToken ? p->current : wlLexerLexToken(&p->lexer);
-	p->hasToken = false;
+	WlToken t = wlParserLookahead(p, 0); // p->hasToken ? p->current : wlLexerLexToken(&p->lexer);
+	p->lookaheadCount--;
+	p->tokenIndex = (p->tokenIndex + 1) % PARSERMAXLOOKAHEAD;
 	return t;
 }
 
@@ -616,7 +640,8 @@ WlToken wlParseExpression(WlParser *p) { return wlParseFullBinaryExpression(p); 
 
 WlToken wlParseStatement(WlParser *p)
 {
-	if (wlParserPeek(p).kind == WlKind_KwReturn) {
+	switch (wlParserPeek(p).kind) {
+	case WlKind_KwReturn: {
 		WlReturnStatement st = {0};
 
 		st.returnKeyword = wlParserTake(p);
@@ -631,7 +656,30 @@ WlToken wlParseStatement(WlParser *p)
 		*stp = st;
 
 		return (WlToken){.kind = WlKind_StReturnStatement, .valuePtr = stp};
-	} else {
+	} break;
+	case WlKind_Symbol: {
+		if (wlParserLookahead(p, 1).kind != WlKind_Symbol) goto defaultExpression;
+
+		WlSyntaxVariableDeclaration var = {0};
+		var.export = (WlToken){.kind = WlKind_Missing};
+		var.type = wlParserMatch(p, WlKind_Symbol);
+		var.name = wlParserMatch(p, WlKind_Symbol);
+		if (wlParserPeek(p).kind == WlKind_OpEquals) {
+			var.equals = wlParserMatch(p, WlKind_OpEquals);
+			var.initializer = wlParseExpression(p);
+		} else {
+			var.equals = (WlToken){.kind = WlKind_Missing};
+			var.initializer = (WlToken){.kind = WlKind_Missing};
+		}
+		var.semicolon = wlParserMatch(p, WlKind_TkSemicolon);
+
+		WlSyntaxVariableDeclaration *varp = arenaMalloc(sizeof(WlSyntaxVariableDeclaration), &p->arena);
+		*varp = var;
+		return (WlToken){.kind = WlKind_StVariableDeclaration, .valuePtr = varp};
+	} break;
+	default: {
+	defaultExpression : {
+	}
 		WlToken expression = wlParseExpression(p);
 		if (wlParserPeek(p).kind == WlKind_TkCurlyClose) {
 			// implicit return statement
@@ -650,6 +698,7 @@ WlToken wlParseStatement(WlParser *p)
 			*stp = st;
 			return (WlToken){.kind = WlKind_StExpressionStatement, .valuePtr = stp};
 		}
+	} break;
 	}
 }
 
@@ -759,7 +808,9 @@ void wlPrintBlock(WlSyntaxBlock blk)
 void wlPrint(WlToken tk)
 {
 	if (tk.kind < WlKind_Syntax_Start) {
-		if (tk.kind == WlKind_String) {
+		if (tk.kind == WlKind_Missing) {
+			// print nothing :3c
+		} else if (tk.kind == WlKind_String) {
 			printf("%s::\"%.*s\" ", WlKindText[tk.kind], STRPRINT(tk.valueStr));
 		} else if (tk.kind == WlKind_Symbol) {
 			printf("%s::%.*s ", WlKindText[tk.kind], STRPRINT(tk.valueStr));
@@ -817,6 +868,15 @@ void wlPrint(WlToken tk)
 			wlPrint(call.args[i]);
 		}
 		wlPrint(call.parenClose);
+	} break;
+	case WlKind_StVariableDeclaration: {
+		WlSyntaxVariableDeclaration var = *(WlSyntaxVariableDeclaration *)tk.valuePtr;
+		wlPrint(var.export);
+		wlPrint(var.type);
+		wlPrint(var.name);
+		wlPrint(var.equals);
+		wlPrint(var.initializer);
+		wlPrint(var.semicolon);
 	} break;
 	case WlKind_StRef: {
 		printf("<ref>::%.*s ", STRPRINT(tk.valueStr));

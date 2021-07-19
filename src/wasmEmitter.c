@@ -104,7 +104,6 @@ void emitExpression(WlbNode expression, DynamicBuf *opcodes)
 	} break;
 	case WlBKind_Ref: {
 		WlSymbol *sym = expression.data;
-		printf("finna get local %d\n", sym->index);
 		wasmPushOpLocalGet(opcodes, sym->index);
 	} break;
 	default: PANIC("Unhandled expression kind %d", expression.kind); break;
@@ -129,6 +128,13 @@ void emitStatement(WlbNode statement, DynamicBuf *opcodes)
 		}
 
 		wasmPushOpCall(opcodes, call.function->index);
+	} break;
+	case WlBKind_VariableDeclaration: {
+		WlBoundVariable var = *(WlBoundVariable *)statement.data;
+		if (var.initializer.kind != WlBKind_None) {
+			emitExpression(var.initializer, opcodes);
+			wasmPushOpLocalSet(opcodes, var.symbol->index);
+		}
 	} break;
 	default: PANIC("Unhandled statement kind %d", statement.kind); break;
 	}
@@ -173,7 +179,21 @@ Buf emitWasm(WlBinder *b)
 			fn->symbol->index = index;
 		} else {
 
-			Buf locals = BUFEMPTY;
+			DynamicBuf locals = dynamicBufCreate();
+
+			for (int i = fn->paramCount; i < listLen(fn->scope->symbols); i++) {
+				WlSymbol *local = fn->scope->symbols[i];
+				local->index = varOffset;
+				if (local->type == WlBType_str) {
+					dynamicBufPush(&locals, WasmType_I32);
+					dynamicBufPush(&locals, WasmType_I32);
+					varOffset += 2;
+				} else {
+					dynamicBufPush(&locals, boundTypeToWasm(local->type));
+					varOffset += 1;
+				}
+			}
+
 			DynamicBuf opcodes = dynamicBufCreate();
 
 			WlbNode bodyNode = fn->body;
@@ -183,9 +203,9 @@ Buf emitWasm(WlBinder *b)
 				emitStatement(statementNode, &opcodes);
 			}
 
-			int index =
-				wasmModuleAddFunction(&source, (fn->symbol->flags & WlSFlag_Export) ? fn->symbol->name : STREMPTY,
-									  dynamicBufToBuf(args), dynamicBufToBuf(rets), locals, dynamicBufToBuf(opcodes));
+			int index = wasmModuleAddFunction(
+				&source, (fn->symbol->flags & WlSFlag_Export) ? fn->symbol->name : STREMPTY, dynamicBufToBuf(args),
+				dynamicBufToBuf(rets), dynamicBufToBuf(locals), dynamicBufToBuf(opcodes));
 			fn->symbol->index = index;
 		}
 	}

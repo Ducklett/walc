@@ -4,7 +4,7 @@ int main(int argc, char **argv)
 {
 	Str source;
 
-	fileReadAllText("examples/03_functions.wl", &source) || PANIC("Failed to open file");
+	fileReadAllText("examples/04_variables.wl", &source) || PANIC("Failed to open file");
 
 	printf("source %.*s\n", STRPRINT(source));
 

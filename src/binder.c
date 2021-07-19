@@ -41,6 +41,7 @@ typedef enum
 {
 	WlBKind_None,
 	WlBKind_Function,
+	WlBKind_VariableDeclaration,
 	WlBKind_Block,
 	WlBKind_Call,
 	WlBKind_Ref,
@@ -132,6 +133,11 @@ typedef struct WlBoundFunction {
 	WlbNode body;
 	WlSymbol *symbol;
 } WlBoundFunction;
+
+typedef struct WlBoundVariable {
+	WlbNode initializer;
+	WlSymbol *symbol;
+} WlBoundVariable;
 
 typedef struct {
 	WlToken *unboundDeclarations;
@@ -306,6 +312,19 @@ WlbNode wlBindStatement(WlBinder *b, WlToken statement)
 	case WlKind_StExpressionStatement: {
 		WlExpressionStatement ex = *(WlExpressionStatement *)statement.valuePtr;
 		return wlBindExpression(b, ex.expression, WlBType_u0);
+	} break;
+	case WlKind_StVariableDeclaration: {
+		WlSyntaxVariableDeclaration var = *(WlSyntaxVariableDeclaration *)statement.valuePtr;
+		WlBoundVariable *bvar = arenaMalloc(sizeof(WlBoundVariable), &b->arena);
+
+		WlBType type = wlBindType(var.type);
+		bvar->symbol = wlPushSymbol(b, var.name.valueStr, type, WlSFlag_Variable);
+		if (var.initializer.kind == WlKind_Missing) {
+			bvar->initializer = (WlbNode){.kind = WlBKind_None};
+		} else {
+			bvar->initializer = wlBindExpression(b, var.initializer, type);
+		}
+		return (WlbNode){.kind = WlBKind_VariableDeclaration, .data = bvar, .type = type};
 	} break;
 	default: PANIC("Unhandled statement kind %s", WlKindText[statement.kind]);
 	}

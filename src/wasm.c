@@ -320,10 +320,34 @@ Buf wasmModuleCompile(Wasm module)
 
 		for (int i = 0; i < bodyCount; i++) {
 			WasmFunc body = module.bodies[i];
-			int bodyLen = 1 + /*locals*/ 1 + body.opcodesCount;
+			DynamicBuf localBuf = dynamicBufCreate();
+
+			int typeCount = 0;
+			if (body.localsCount) {
+				typeCount++;
+				WasmType current = body.locals[0];
+				int currentCount = 0;
+				for (int i = 0; i < body.localsCount; i++) {
+					if (body.locals[i] == current) {
+						currentCount++;
+					} else {
+						typeCount++;
+						leb128EncodeU(currentCount, &localBuf);
+						dynamicBufPush(&localBuf, current);
+					}
+				}
+				leb128EncodeU(currentCount, &localBuf);
+				dynamicBufPush(&localBuf, current);
+			}
+			int bodyLen = 1 +
+						  /*1 byte for types count, this isn't correct but good enough for now*/
+						  (localBuf.len + 1) + body.opcodesCount;
 			leb128EncodeU(bodyLen, &bodyBuf);
-			// TODO: support locals
-			dynamicBufPush(&bodyBuf, 0 /*locals*/);
+
+			leb128EncodeU(typeCount, &bodyBuf);
+			dynamicBufAppend(&bodyBuf, dynamicBufToBuf(localBuf));
+
+			dynamicBufFree(&localBuf);
 			dynamicBufAppend(&bodyBuf, (Buf){body.opcodes, body.opcodesCount});
 			dynamicBufPush(&bodyBuf, 0x0B);
 		}
