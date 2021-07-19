@@ -1,4 +1,6 @@
 
+import u0 print(str msg);
+
 export i32 double(i32 a) { return a * 2; }
 export i32 halve(i32 a) { return a / 2; }
 export i32 succ(i32 a) { return a + 1; }

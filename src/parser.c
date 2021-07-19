@@ -49,7 +49,7 @@ typedef enum
 	WlKind_KwStruct,
 	WlKind_KwType,
 	WlKind_KwReturn,
-	WlKind_KwExtern,
+	WlKind_KwImport,
 	WlKind_KwExport,
 	WlKind_Keywords_End,
 
@@ -64,7 +64,7 @@ typedef enum
 	WlKind_StType,
 	WlKind_StBlock,
 	WlKind_StExpression,
-	WlKind_StExtern,
+	WlKind_StImport,
 	WlKind_Syntax_End,
 } WlKind;
 
@@ -112,7 +112,7 @@ char *WlKindText[] = {
 	"struct",
 	"type",
 	"return",
-	"extern",
+	"import",
 	"export",
 	"<keywords end>",
 
@@ -127,7 +127,7 @@ char *WlKindText[] = {
 	"WlKind_StType",
 	"WlKind_StBlock",
 	"WlKind_StExpression",
-	"WlKind_StExtern",
+	"WlKind_Stimport",
 	"<syntax end>",
 };
 
@@ -437,6 +437,16 @@ typedef struct {
 } WlSyntaxFunction;
 
 typedef struct {
+	WlToken import;
+	WlToken type;
+	WlToken name;
+	WlToken parenOpen;
+	List(WlToken) parameterList;
+	WlToken parenClose;
+	WlToken semicolon;
+} WlSyntaxImport;
+
+typedef struct {
 	WlLexer lexer;
 	WlToken *topLevelDeclarations;
 	int topLevelCount;
@@ -656,6 +666,23 @@ WlSyntaxBlock wlParseBlock(WlParser *p)
 	return blk;
 }
 
+void wlParseImport(WlParser *p)
+{
+	WlSyntaxImport im = {0};
+
+	im.import = wlParserMatch(p, WlKind_KwImport);
+	im.type = wlParserMatch(p, WlKind_Symbol);
+	im.name = wlParserMatch(p, WlKind_Symbol);
+	im.parenOpen = wlParserMatch(p, WlKind_TkParenOpen);
+	im.parameterList = wlParseParameterList(p);
+	im.parenClose = wlParserMatch(p, WlKind_TkParenClose);
+	im.semicolon = wlParserMatch(p, WlKind_TkSemicolon);
+
+	WlSyntaxImport *imp = arenaMalloc(sizeof(WlSyntaxImport), &p->arena);
+	*imp = im;
+	wlParserAddTopLevelStatement(p, (WlToken){.kind = WlKind_StImport, .valuePtr = imp});
+}
+
 void wlParseFunction(WlParser *p)
 {
 	WlSyntaxFunction fn = {0};
@@ -676,10 +703,18 @@ void wlParseFunction(WlParser *p)
 	wlParserAddTopLevelStatement(p, (WlToken){.kind = WlKind_StFunction, .valuePtr = fnp});
 }
 
+void wlParseDeclaration(WlParser *p)
+{
+	switch (wlParserPeek(p).kind) {
+	case WlKind_KwImport: return wlParseImport(p);
+	default: return wlParseFunction(p);
+	}
+}
+
 void wlParse(WlParser *p)
 {
 	while (wlParserPeek(p).kind != WlKind_EOF) {
-		wlParseFunction(p);
+		wlParseDeclaration(p);
 	}
 }
 
@@ -748,6 +783,15 @@ void wlPrint(WlToken tk)
 		wlPrint(fn->parenOpen);
 		wlPrint(fn->parenClose);
 		wlPrintBlock(fn->body);
+	} break;
+	case WlKind_StImport: {
+		WlSyntaxImport *fn = tk.valuePtr;
+		wlPrint(fn->import);
+		wlPrint(fn->type);
+		wlPrint(fn->name);
+		wlPrint(fn->parenOpen);
+		wlPrint(fn->parenClose);
+		wlPrint(fn->semicolon);
 	} break;
 	case WlKind_StCall: {
 		WlSyntaxCall call = *(WlSyntaxCall *)tk.valuePtr;

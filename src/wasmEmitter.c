@@ -165,11 +165,11 @@ Buf emitWasm(WlBinder *b)
 		}
 
 		DynamicBuf rets = dynamicBufCreate();
-		WasmType returnType = boundTypeToWasm(fn->returnType);
+		WasmType returnType = boundTypeToWasm(fn->symbol->type);
 		if (returnType != WasmType_Void) dynamicBufPush(&rets, returnType);
 
-		if (fn->symbol->flags & WlSFlag_Extern) {
-			int index = wasmModuleAddImport(&source, fn->name, dynamicBufToBuf(args), dynamicBufToBuf(rets));
+		if (fn->symbol->flags & WlSFlag_Import) {
+			int index = wasmModuleAddImport(&source, fn->symbol->name, dynamicBufToBuf(args), dynamicBufToBuf(rets));
 			fn->symbol->index = index;
 		} else {
 
@@ -183,8 +183,9 @@ Buf emitWasm(WlBinder *b)
 				emitStatement(statementNode, &opcodes);
 			}
 
-			int index = wasmModuleAddFunction(&source, fn->exported ? fn->name : STREMPTY, dynamicBufToBuf(args),
-											  dynamicBufToBuf(rets), locals, dynamicBufToBuf(opcodes));
+			int index =
+				wasmModuleAddFunction(&source, (fn->symbol->flags & WlSFlag_Export) ? fn->symbol->name : STREMPTY,
+									  dynamicBufToBuf(args), dynamicBufToBuf(rets), locals, dynamicBufToBuf(opcodes));
 			fn->symbol->index = index;
 		}
 	}

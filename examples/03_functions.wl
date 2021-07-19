@@ -1,3 +1,5 @@
+import u0 print(str msg);
+
 u0 callme() {
     print("called by main!");
 }

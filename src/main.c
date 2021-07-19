@@ -20,7 +20,8 @@ int main(int argc, char **argv)
 	int functionCount = listLen(b.functions);
 	for (int i = 0; i < functionCount; i++) {
 		WlBoundFunction *fn = b.functions[i];
-		printf("%s%s %.*s(){}\n", fn->exported ? "export " : "", WlBTypeText[fn->returnType], STRPRINT(fn->name));
+		printf("%s%s %.*s(){}\n", (fn->symbol->flags & WlSFlag_Export) ? "export " : "", WlBTypeText[fn->symbol->type],
+			   STRPRINT(fn->symbol->name));
 	}
 
 	Buf wasm = emitWasm(&b);
