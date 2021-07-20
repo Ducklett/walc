@@ -42,6 +42,7 @@ typedef enum
 	WlBKind_None,
 	WlBKind_Function,
 	WlBKind_VariableDeclaration,
+	WlBKind_VariableAssignment,
 	WlBKind_Block,
 	WlBKind_Call,
 	WlBKind_Ref,
@@ -138,6 +139,11 @@ typedef struct WlBoundVariable {
 	WlbNode initializer;
 	WlSymbol *symbol;
 } WlBoundVariable;
+
+typedef struct {
+	WlbNode expression;
+	WlSymbol *symbol;
+} WlBoundAssignment;
 
 typedef struct {
 	WlToken *unboundDeclarations;
@@ -325,6 +331,17 @@ WlbNode wlBindStatement(WlBinder *b, WlToken statement)
 			bvar->initializer = wlBindExpression(b, var.initializer, type);
 		}
 		return (WlbNode){.kind = WlBKind_VariableDeclaration, .data = bvar, .type = type};
+	} break;
+	case WlKind_StVariableAssignement: {
+		WlAssignmentExpression var = *(WlAssignmentExpression *)statement.valuePtr;
+		WlBoundAssignment *bvar = arenaMalloc(sizeof(WlBoundAssignment), &b->arena);
+
+		WlSymbol *variable = wlFindSymbol(b, var.variable.valueStr, WlSFlag_Variable, true);
+
+		bvar->symbol = variable;
+		bvar->expression = wlBindExpression(b, var.expression, variable->type);
+
+		return (WlbNode){.kind = WlBKind_VariableAssignment, .data = bvar, .type = variable->type};
 	} break;
 	default: PANIC("Unhandled statement kind %s", WlKindText[statement.kind]);
 	}

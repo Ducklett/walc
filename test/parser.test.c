@@ -95,8 +95,8 @@ void test_token_lexing()
 	}
 
 	{
-		char *numbers[] = {"1", "35", "0xF00", "0b10110", "3837"};
-		int expectedValues[] = {1, 35, 0xF00, 22, 3837};
+		char *numbers[] = {"1", "35", "0xF00", "0b10110", "3837", "101010"};
+		int expectedValues[] = {1, 35, 0xF00, 22, 3837, 101010};
 		test_theory("lexer lexes individual numbers", char *, numbers)
 		{
 			Str number = strFromCstr(numbers[i]);

@@ -412,6 +412,13 @@ typedef struct {
 } WlBinaryExpression;
 
 typedef struct {
+	WlToken variable;
+	WlToken equals;
+	WlToken expression;
+	WlToken semicolon;
+} WlAssignmentExpression;
+
+typedef struct {
 	WlToken name;
 	WlToken parenOpen;
 	List(WlToken) args;
@@ -658,24 +665,39 @@ WlToken wlParseStatement(WlParser *p)
 		return (WlToken){.kind = WlKind_StReturnStatement, .valuePtr = stp};
 	} break;
 	case WlKind_Symbol: {
-		if (wlParserLookahead(p, 1).kind != WlKind_Symbol) goto defaultExpression;
-
-		WlSyntaxVariableDeclaration var = {0};
-		var.export = (WlToken){.kind = WlKind_Missing};
-		var.type = wlParserMatch(p, WlKind_Symbol);
-		var.name = wlParserMatch(p, WlKind_Symbol);
-		if (wlParserPeek(p).kind == WlKind_OpEquals) {
+		switch (wlParserLookahead(p, 1).kind) {
+		case WlKind_OpEquals: {
+			WlAssignmentExpression var = {0};
+			var.variable = wlParserMatch(p, WlKind_Symbol);
 			var.equals = wlParserMatch(p, WlKind_OpEquals);
-			var.initializer = wlParseExpression(p);
-		} else {
-			var.equals = (WlToken){.kind = WlKind_Missing};
-			var.initializer = (WlToken){.kind = WlKind_Missing};
-		}
-		var.semicolon = wlParserMatch(p, WlKind_TkSemicolon);
+			var.expression = wlParseExpression(p);
+			var.semicolon = wlParserMatch(p, WlKind_TkSemicolon);
 
-		WlSyntaxVariableDeclaration *varp = arenaMalloc(sizeof(WlSyntaxVariableDeclaration), &p->arena);
-		*varp = var;
-		return (WlToken){.kind = WlKind_StVariableDeclaration, .valuePtr = varp};
+			WlAssignmentExpression *varp = arenaMalloc(sizeof(WlAssignmentExpression), &p->arena);
+			*varp = var;
+			return (WlToken){.kind = WlKind_StVariableAssignement, .valuePtr = varp};
+		}
+		case WlKind_Symbol: {
+			WlSyntaxVariableDeclaration var = {0};
+			var.export = (WlToken){.kind = WlKind_Missing};
+			var.type = wlParserMatch(p, WlKind_Symbol);
+			var.name = wlParserMatch(p, WlKind_Symbol);
+			if (wlParserPeek(p).kind == WlKind_OpEquals) {
+				var.equals = wlParserMatch(p, WlKind_OpEquals);
+				var.initializer = wlParseExpression(p);
+			} else {
+				var.equals = (WlToken){.kind = WlKind_Missing};
+				var.initializer = (WlToken){.kind = WlKind_Missing};
+			}
+			var.semicolon = wlParserMatch(p, WlKind_TkSemicolon);
+
+			WlSyntaxVariableDeclaration *varp = arenaMalloc(sizeof(WlSyntaxVariableDeclaration), &p->arena);
+			*varp = var;
+			return (WlToken){.kind = WlKind_StVariableDeclaration, .valuePtr = varp};
+		} break;
+		default: goto defaultExpression; break;
+		}
+
 	} break;
 	default: {
 	defaultExpression : {
@@ -876,6 +898,13 @@ void wlPrint(WlToken tk)
 		wlPrint(var.name);
 		wlPrint(var.equals);
 		wlPrint(var.initializer);
+		wlPrint(var.semicolon);
+	} break;
+	case WlKind_StVariableAssignement: {
+		WlAssignmentExpression var = *(WlAssignmentExpression *)tk.valuePtr;
+		wlPrint(var.variable);
+		wlPrint(var.equals);
+		wlPrint(var.expression);
 		wlPrint(var.semicolon);
 	} break;
 	case WlKind_StRef: {

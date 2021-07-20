@@ -136,6 +136,11 @@ void emitStatement(WlbNode statement, DynamicBuf *opcodes)
 			wasmPushOpLocalSet(opcodes, var.symbol->index);
 		}
 	} break;
+	case WlBKind_VariableAssignment: {
+		WlBoundAssignment var = *(WlBoundAssignment *)statement.data;
+		emitExpression(var.expression, opcodes);
+		wasmPushOpLocalSet(opcodes, var.symbol->index);
+	} break;
 	default: PANIC("Unhandled statement kind %d", statement.kind); break;
 	}
 }
