@@ -29,6 +29,8 @@ typedef enum WlKind
 	WlKind_TkParenClose,
 	WlKind_TkCurlyOpen,
 	WlKind_TkCurlyClose,
+	WlKind_TkBracketOpen,
+	WlKind_TkBracketClose,
 	WlKind_TkComma,
 	WlKind_TkSemicolon,
 
@@ -94,6 +96,8 @@ char *WlKindText[] = {
 	")",
 	"{",
 	"}",
+	"[",
+	"]",
 	",",
 	";",
 	"<keywords start>",
@@ -163,6 +167,7 @@ typedef enum
 	UnexpectedCharacterDiagnostic,
 	UnterminatedStringDiagnostic,
 	UnexpectedTokenDiagnostic,
+	UnexpectedTokenInPrimaryExpressionDiagnostic,
 } WlDiagnosticKind;
 
 typedef struct {

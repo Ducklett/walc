@@ -41,8 +41,9 @@ char wlLexerLookahead(WlLexer *l, int n) { return l->index + n < l->source.len ?
 
 WlToken wlLexerBasic(WlLexer *l, int len, WlKind kind)
 {
+	WlSpan span = {.filename = l->filename, .source = l->source, .start = l->index, .len = len};
 	l->index += len;
-	return (WlToken){.kind = kind};
+	return (WlToken){.kind = kind, .span = span};
 }
 
 void wlLexerTrim(WlLexer *l)
@@ -53,9 +54,10 @@ void wlLexerTrim(WlLexer *l)
 
 WlToken lexerReport(WlLexer *l, WlDiagnosticKind kind, int start, int end)
 {
-	WlDiagnostic d = {.kind = kind, .span = spanFromRange(l->filename, l->source, start, l->index)};
+	WlSpan span = spanFromRange(l->filename, l->source, start, l->index);
+	WlDiagnostic d = {.kind = kind, .span = span};
 	listPush(&l->diagnostics, d);
-	return (WlToken){.kind = WlKind_Bad};
+	return (WlToken){.kind = WlKind_Bad, .span = span};
 }
 
 WlToken wlLexerLexToken(WlLexer *l)
@@ -125,6 +127,8 @@ lexStart:
 	case ')': return wlLexerBasic(l, 1, WlKind_TkParenClose); break;
 	case '{': return wlLexerBasic(l, 1, WlKind_TkCurlyOpen); break;
 	case '}': return wlLexerBasic(l, 1, WlKind_TkCurlyClose); break;
+	case '[': return wlLexerBasic(l, 1, WlKind_TkBracketOpen); break;
+	case ']': return wlLexerBasic(l, 1, WlKind_TkBracketClose); break;
 	case ',': return wlLexerBasic(l, 1, WlKind_TkComma); break;
 	case ';': return wlLexerBasic(l, 1, WlKind_TkSemicolon); break;
 	case '"': {
@@ -140,7 +144,9 @@ lexStart:
 		Str value = strSlice(l->source, start, l->index - start);
 		l->index++;
 
-		return (WlToken){.kind = WlKind_String, .valueStr = value};
+		return (WlToken){.kind = WlKind_String,
+						 .span = spanFromRange(l->filename, l->source, start - 1, l->index),
+						 .valueStr = value};
 	} break;
 	case '0':
 	case '1':
@@ -209,10 +215,18 @@ lexStart:
 					floatDivisor *= 10;
 				}
 				f64 finalValue = value + (floatValue / (f64)floatDivisor);
-				return (WlToken){.kind = WlKind_FloatNumber, .valueFloat = finalValue};
+				return (WlToken){
+					.kind = WlKind_FloatNumber,
+					.valueFloat = finalValue,
+					.span = spanFromRange(l->filename, l->source, start, l->index),
+				};
 			}
 		}
-		return (WlToken){.kind = WlKind_Number, .valueNum = value};
+		return (WlToken){
+			.kind = WlKind_Number,
+			.valueNum = value,
+			.span = spanFromRange(l->filename, l->source, start, l->index),
+		};
 	} break;
 	default: {
 	unmatched : {
@@ -222,8 +236,12 @@ lexStart:
 				// TODO: bake into Str's beforehand so we don't have to convert from cstr
 				Str keyword = strFromCstr(WlKindText[i]);
 				if (strEqual(strSlice(l->source, l->index, keyword.len), keyword)) {
+					int start = l->index;
 					l->index += keyword.len;
-					return (WlToken){.kind = i};
+					return (WlToken){
+						.kind = i,
+						.span = spanFromRange(l->filename, l->source, start, l->index),
+					};
 					break;
 				}
 			}
@@ -234,7 +252,11 @@ lexStart:
 			while (isSymbol(wlLexerCurrent(l)))
 				l->index++;
 			Str symbolName = strSlice(l->source, start, l->index - start);
-			return (WlToken){.kind = WlKind_Symbol, .valueStr = symbolName};
+			return (WlToken){
+				.kind = WlKind_Symbol,
+				.valueStr = symbolName,
+				.span = spanFromRange(l->filename, l->source, start, l->index),
+			};
 		} else {
 			l->index++;
 			return lexerReport(l, UnexpectedCharacterDiagnostic, l->index - 1, l->index);
@@ -336,6 +358,7 @@ typedef struct {
 typedef struct {
 	WlLexer lexer;
 	List(WlToken) topLevelDeclarations;
+	List(WlDiagnostic) diagnostics;
 	ArenaAllocator arena;
 	WlToken tokens[PARSERMAXLOOKAHEAD];
 	int tokenIndex;
@@ -348,6 +371,7 @@ WlParser wlParserCreate(Str filename, Str source)
 	return (WlParser){
 		.lexer = l,
 		.topLevelDeclarations = listNew(),
+		.diagnostics = listNew(),
 		.arena = arenaCreate(),
 		.tokens = {0},
 		.lookaheadCount = 0,
@@ -376,14 +400,24 @@ WlToken wlParserTake(WlParser *p)
 	return t;
 }
 
+WlToken parserReport(WlParser *p, WlDiagnosticKind kind, WlToken t, WlKind expected)
+{
+	if (t.kind != WlKind_Bad) {
+		WlDiagnostic d = {.kind = kind, .span = t.span, .kind1 = t.kind, .kind2 = expected};
+		listPush(&p->diagnostics, d);
+		t.kind = WlKind_Bad;
+		return t;
+	}
+}
+
 WlToken wlParserMatch_impl(WlParser *p, WlKind kind, const char *file, int line)
 {
 	WlToken t = wlParserTake(p);
 
 	if (t.kind != kind) {
-		printf("unexpected token %s, expected %s\n", WlKindText[t.kind], WlKindText[kind]);
-		todo_impl("Report diagnostic on mismatched token", file, line);
+		return parserReport(p, UnexpectedTokenDiagnostic, t, kind);
 	}
+
 	return t;
 }
 #define wlParserMatch(p, k) wlParserMatch_impl(p, k, __FILE__, __LINE__)
@@ -459,7 +493,7 @@ WlToken wlParsePrimaryExpression(WlParser *p)
 			return symbol;
 		}
 	}
-	default: PANIC("unexpected token kind %s", WlKindText[wlParserPeek(p).kind]); break;
+	default: return parserReport(p, UnexpectedTokenInPrimaryExpressionDiagnostic, wlParserTake(p), 0);
 	}
 }
 
@@ -589,7 +623,7 @@ WlSyntaxBlock wlParseBlock(WlParser *p)
 	WlSyntaxBlock blk = {0};
 	blk.curlyOpen = wlParserMatch(p, WlKind_TkCurlyOpen);
 	blk.statements = malloc(sizeof(WlToken) * 0xFF);
-	while (wlParserPeek(p).kind != WlKind_TkCurlyClose) {
+	while (wlParserPeek(p).kind != WlKind_TkCurlyClose && wlParserPeek(p).kind != WlKind_EOF) {
 		blk.statements[blk.statementCount++] = wlParseStatement(p);
 	}
 
@@ -597,7 +631,7 @@ WlSyntaxBlock wlParseBlock(WlParser *p)
 	return blk;
 }
 
-void wlParseImport(WlParser *p)
+WlToken wlParseImport(WlParser *p)
 {
 	WlSyntaxImport im = {0};
 
@@ -619,15 +653,22 @@ void wlParseImport(WlParser *p)
 
 	WlSyntaxImport *imp = arenaMalloc(sizeof(WlSyntaxImport), &p->arena);
 	*imp = im;
-	wlParserAddTopLevelStatement(p, (WlToken){.kind = WlKind_StImport, .valuePtr = imp});
+
+	WlToken tk = {.kind = WlKind_StImport, .valuePtr = imp};
+	wlParserAddTopLevelStatement(p, tk);
+	return tk;
 }
 
-void wlParseFunction(WlParser *p)
+WlToken wlParseFunction(WlParser *p)
 {
+	int errorCount = listLen(p->diagnostics);
+
 	WlSyntaxFunction fn = {0};
 
 	if (wlParserPeek(p).kind == WlKind_KwExport) {
 		fn.export = wlParserMatch(p, WlKind_KwExport);
+	} else {
+		fn.export = (WlToken){.kind = WlKind_Missing};
 	}
 
 	fn.type = wlParserMatch(p, WlKind_Symbol);
@@ -644,13 +685,17 @@ void wlParseFunction(WlParser *p)
 	fn.parameterList = wlParseParameterList(p);
 	fn.parenClose = wlParserMatch(p, WlKind_TkParenClose);
 	fn.body = wlParseBlock(p);
-
 	WlSyntaxFunction *fnp = arenaMalloc(sizeof(WlSyntaxFunction), &p->arena);
 	*fnp = fn;
-	wlParserAddTopLevelStatement(p, (WlToken){.kind = WlKind_StFunction, .valuePtr = fnp});
+
+	bool hasError = errorCount != listLen(p->diagnostics);
+	WlToken tk = (WlToken){.kind = hasError ? WlKind_Bad : WlKind_StFunction, .valuePtr = fnp};
+
+	wlParserAddTopLevelStatement(p, tk);
+	return tk;
 }
 
-void wlParseDeclaration(WlParser *p)
+WlToken wlParseDeclaration(WlParser *p)
 {
 	switch (wlParserPeek(p).kind) {
 	case WlKind_KwImport: return wlParseImport(p);

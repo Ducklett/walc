@@ -37,13 +37,15 @@ void diagnosticPrint(WlDiagnostic d)
 	} break;
 	case UnexpectedTokenDiagnostic: {
 		if (d.kind2) {
-
-			printf("Unexpected token \"%.*s\" of kind %s expected %s\n", STRPRINT(errSlice), WlKindText[d.kind1],
+			printf("Unexpected token %s%.*s%s, expected %s\n", TERMBOLDCYAN, STRPRINT(errSlice), TERMCLEAR,
 				   WlKindText[d.kind2]);
 		} else {
-
-			printf("Unexpected token \"%.*s\" of kind %s\n", STRPRINT(errSlice), WlKindText[d.kind1]);
+			printf("Unexpected token %s%.*s%s\n", TERMBOLDCYAN, STRPRINT(errSlice), TERMCLEAR, WlKindText[d.kind1]);
 		}
+	} break;
+	case UnexpectedTokenInPrimaryExpressionDiagnostic: {
+		printf("Unexpected token %s%.*s%s while parsing primary expression\n", TERMBOLDCYAN, STRPRINT(errSlice),
+			   TERMCLEAR);
 	} break;
 	default: PANIC("unhandled diagnostic kind %d\n", d.kind);
 	}

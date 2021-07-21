@@ -349,6 +349,33 @@ void test_expression_parsing()
 
 			wlParserFree(&p);
 		}
+
+		test_that("parser reports diagnostic on illegal primary expression")
+		{
+			WlParser p = wlParserCreate(STREMPTY, STR("+"));
+			WlToken t = wlParsePrimaryExpression(&p);
+
+			test_assert("lexer had no errors", listLen(p.lexer.diagnostics) == 0);
+			test_assert("parser reported a diagnostic", listLen(p.diagnostics) == 1);
+			test_assert("it is an unexpected token in primary expression diagnostic",
+						p.diagnostics[0].kind == UnexpectedTokenInPrimaryExpressionDiagnostic);
+			test_assert("the returned token is bad", t.kind == WlKind_Bad);
+
+			wlParserFree(&p);
+		}
+
+		test_that("parser reports diagnostic on unexpected token")
+		{
+			WlParser p = wlParserCreate(STREMPTY, STR("export u0 main[]"));
+			WlToken t = wlParseFunction(&p);
+
+			test_assert("lexer had no errors", listLen(p.lexer.diagnostics) == 0);
+			test_assert("parser reported a diagnostic", listLen(p.diagnostics) >= 1);
+			test_assert("it is an unexpected token diagnostic", p.diagnostics[0].kind == UnexpectedTokenDiagnostic);
+			test_assert("the returned token is bad", t.kind == WlKind_Bad);
+
+			wlParserFree(&p);
+		}
 	}
 }
 
