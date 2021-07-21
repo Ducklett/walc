@@ -1,19 +1,19 @@
-#include <wasmEmitter.c>
+#include <walc.h>
 
 int main(int argc, char **argv)
 {
+	Str filename = STR("examples/04_variables.wl");
 	Str source;
 
-	fileReadAllText("examples/04_variables.wl", &source) || PANIC("Failed to open file");
+	fileReadAllText(filename.buf, &source) || PANIC("Failed to open file");
 
-	printf("source %.*s\n", STRPRINT(source));
-
-	WlParser p = wlParserCreate(source);
+	WlParser p = wlParserCreate(filename, source);
 	wlParse(&p);
 
-	WlBinder b = wlBind(p.topLevelDeclarations, p.topLevelCount);
+	int topLevelCount = listLen(p.topLevelDeclarations);
+	WlBinder b = wlBind(p.topLevelDeclarations, topLevelCount);
 
-	for (int i = 0; i < p.topLevelCount; i++) {
+	for (int i = 0; i < topLevelCount; i++) {
 		wlPrint(p.topLevelDeclarations[i]);
 	}
 

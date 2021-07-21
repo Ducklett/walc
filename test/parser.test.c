@@ -4,7 +4,7 @@
 
 #include <sti_test.h>
 
-#include <parser.c>
+#include <walc.h>
 
 void test_token_lexing()
 {
@@ -26,7 +26,7 @@ void test_token_lexing()
 			Str operator= strFromCstr(operators[i]);
 			WlKind expected = expectedKind[i];
 
-			WlLexer l = wlLexerCreate(operator);
+			WlLexer l = wlLexerCreate(STREMPTY, operator);
 			List(WlToken) tokens = wlLexerLexTokens(&l);
 			test_assert_impl(cstrFormat("lexes single token '%.*s'", STRPRINT(operator)),
 							 listLen(tokens) == 1 && tokens[0].kind == expected);
@@ -47,7 +47,7 @@ void test_token_lexing()
 
 		int tokenCount = sizeof(expected) / sizeof(WlKind);
 
-		WlLexer l = wlLexerCreate(operators);
+		WlLexer l = wlLexerCreate(STREMPTY, operators);
 		List(WlToken) tokens = wlLexerLexTokens(&l);
 
 		test_assert(cstrFormat("lexes '%d' tokens"), listLen(tokens) == tokenCount);
@@ -68,7 +68,7 @@ void test_token_lexing()
 		test_theory("expected symbol names are legal", char *, names)
 		{
 			Str symbol = strFromCstr(names[i]);
-			WlLexer l = wlLexerCreate(symbol);
+			WlLexer l = wlLexerCreate(STREMPTY, symbol);
 			List(WlToken) tokens = wlLexerLexTokens(&l);
 			test_assert(cstrFormat("'%.*s' is a single token", STRPRINT(symbol)), listLen(tokens) == 1);
 			test_assert(cstrFormat("'%.*s' is a symbol", STRPRINT(symbol)), tokens[0].kind == WlKind_Symbol);
@@ -83,7 +83,7 @@ void test_token_lexing()
 		test_theory("unexpected symbol names are illegal", char *, names)
 		{
 			Str symbol = strFromCstr(names[i]);
-			WlLexer l = wlLexerCreate(symbol);
+			WlLexer l = wlLexerCreate(STREMPTY, symbol);
 			List(WlToken) tokens = wlLexerLexTokens(&l);
 			test_assert(cstrFormat("'%.*s' matches at least one token", STRPRINT(symbol)), listLen(tokens) >= 1);
 			test_assert(cstrFormat("'%.*s' is not a symbol", STRPRINT(symbol)),
@@ -102,7 +102,7 @@ void test_token_lexing()
 			Str number = strFromCstr(numbers[i]);
 			int expected = expectedValues[i];
 
-			WlLexer l = wlLexerCreate(number);
+			WlLexer l = wlLexerCreate(STREMPTY, number);
 			List(WlToken) tokens = wlLexerLexTokens(&l);
 			test_assert(cstrFormat("lexes single number '%.*s' as %d", STRPRINT(number), expected),
 						listLen(tokens) == 1 && tokens[0].kind == WlKind_Number && tokens[0].valueNum == expected);
@@ -112,33 +112,80 @@ void test_token_lexing()
 		}
 	}
 
+	test_that("lexer lexes assignment sequence without spaces")
 	{
-		test_that("lexer skips single line comments")
-		{
-			Str source = STR("// this is a comment\n10");
-			WlLexer l = wlLexerCreate(source);
+		Str source = STR("i32 a=101010;");
+		WlLexer l = wlLexerCreate(STREMPTY, source);
+		List(WlToken) tokens = wlLexerLexTokens(&l);
 
-			List(WlToken) tokens = wlLexerLexTokens(&l);
-			test_assert("finds a single token", listLen(tokens) == 1);
-			test_assert("token is a number", tokens[0].kind = WlKind_Number);
+		test_assert("lexes 5 tokens", listLen(tokens) == 5);
+		test_assert("token 1 is a symbol", tokens[0].kind == WlKind_Symbol);
+		test_assert("token 2 is a symbol", tokens[1].kind == WlKind_Symbol);
+		test_assert("token 3 is an equals", tokens[2].kind == WlKind_OpEquals);
+		test_assert("token 4 is a number", tokens[3].kind == WlKind_Number);
+		test_assert("token 5 is a semicolon", tokens[4].kind == WlKind_TkSemicolon);
 
-			wlLexerFree(&l);
-		}
+		listFree(&tokens);
+		wlLexerFree(&l);
+	}
 
-		test_that("lexer skips multi line comments")
-		{
-			Str source =
-				STR("/* this is a multi line\n\ncomment comment */ \n"
-					"10\n/*another /*nested\n*/ one*/\n");
+	test_that("lexer skips single line comments")
+	{
+		Str source = STR("// this is a comment\n10");
+		WlLexer l = wlLexerCreate(STREMPTY, source);
 
-			WlLexer l = wlLexerCreate(source);
+		List(WlToken) tokens = wlLexerLexTokens(&l);
+		test_assert("finds a single token", listLen(tokens) == 1);
+		test_assert("token is a number", tokens[0].kind = WlKind_Number);
 
-			List(WlToken) tokens = wlLexerLexTokens(&l);
-			test_assert("finds a single token", listLen(tokens) == 1);
-			test_assert("token is a number", tokens[0].kind = WlKind_Number);
+		listFree(&tokens);
+		wlLexerFree(&l);
+	}
 
-			wlLexerFree(&l);
-		}
+	test_that("lexer skips multi line comments")
+	{
+		Str source =
+			STR("/* this is a multi line\n\ncomment comment */ \n"
+				"10\n/*another /*nested\n*/ one*/\n");
+
+		WlLexer l = wlLexerCreate(STREMPTY, source);
+
+		List(WlToken) tokens = wlLexerLexTokens(&l);
+		test_assert("finds a single token", listLen(tokens) == 1);
+		test_assert("token is a number", tokens[0].kind = WlKind_Number);
+
+		listFree(&tokens);
+		wlLexerFree(&l);
+	}
+
+	test_that("lexer reports diagnostic on unterminated multiline comment")
+	{
+		Str source = STR("/*Hello world");
+
+		WlLexer l = wlLexerCreate(STREMPTY, source);
+
+		List(WlToken) tokens = wlLexerLexTokens(&l);
+		test_assert("reported a diagnostic", listLen(l.diagnostics) == 1);
+		test_assert("it is an unterminated comment diagnostic", l.diagnostics[0].kind == UnterminatedCommentDiagnostic);
+
+		listFree(&tokens);
+		wlLexerFree(&l);
+	}
+
+	test_that("lexer reports diagnostic on unterminated string")
+	{
+		Str source = STR("\"Hello world");
+
+		WlLexer l = wlLexerCreate(STREMPTY, source);
+
+		List(WlToken) tokens = wlLexerLexTokens(&l);
+		test_assert("reported a diagnostic", listLen(l.diagnostics) == 1);
+		test_assert("it is an unterminated string diagnostic", l.diagnostics[0].kind == UnterminatedStringDiagnostic);
+		test_assert("it returned a token", listLen(tokens) == 1);
+		test_assert("the token is a bad token", tokens[0].kind == WlKind_Bad);
+
+		listFree(&tokens);
+		wlLexerFree(&l);
 	}
 }
 
@@ -166,7 +213,7 @@ void test_expression_parsing()
 	test_that("Parser parses call expression")
 	{
 		Str source = STR("hello()");
-		WlParser p = wlParserCreate(source);
+		WlParser p = wlParserCreate(STREMPTY, source);
 
 		WlToken t = wlParseExpression(&p);
 		test_assert("call expression is found", t.kind == WlKind_StCall);
@@ -188,7 +235,7 @@ void test_expression_parsing()
 	{
 		BinaryExpressionTestData data = binaryExpressions[i];
 
-		WlParser p = wlParserCreate(data.source);
+		WlParser p = wlParserCreate(STREMPTY, data.source);
 		WlToken t = wlParseExpression(&p);
 
 		test_assert(cstrFormat("%.*s parses as binary epxression", STRPRINT(data.source)),
@@ -221,7 +268,7 @@ void test_expression_parsing()
 
 			OperatorPrecedenceData data = expressions[i];
 
-			WlParser p = wlParserCreate(data.source);
+			WlParser p = wlParserCreate(STREMPTY, data.source);
 			WlToken t = wlParseExpression(&p);
 
 			test_assert(cstrFormat("%.*s parses as binary epxression", STRPRINT(data.source)),
@@ -310,7 +357,7 @@ void test_return_statement_parsing()
 	test_that("Empty return gets parsed")
 	{
 		Str source = STR("return;");
-		WlParser p = wlParserCreate(source);
+		WlParser p = wlParserCreate(STREMPTY, source);
 		WlToken t = wlParseStatement(&p);
 		test_assert("Parses return statement", t.kind == WlKind_StReturnStatement);
 
@@ -323,13 +370,14 @@ void test_return_statement_parsing()
 	test_that("Return with expression gets parsed")
 	{
 		Str source = STR("return 10 + 20;");
-		WlParser p = wlParserCreate(source);
+		WlParser p = wlParserCreate(STREMPTY, source);
 		WlToken t = wlParseStatement(&p);
 		test_assert("Parses return statement", t.kind == WlKind_StReturnStatement);
 
 		WlReturnStatement ret = *(WlReturnStatement *)t.valuePtr;
 
-		test_assert("Has expression", t.valuePtr != WlKind_Missing);
+		test_assert("Has expression", ret.expression.kind != WlKind_Missing);
+
 		wlParserFree(&p);
 	}
 }
@@ -339,7 +387,7 @@ void test_function_parsing()
 	test_that("parser parses parameter list")
 	{
 		Str source = STR("u32 a, u32 b, u32 c");
-		WlParser p = wlParserCreate(source);
+		WlParser p = wlParserCreate(STREMPTY, source);
 		WlKind delimeter = WlKind_TkComma;
 
 		List(WlToken) t = wlParseParameterList(&p);
@@ -357,7 +405,7 @@ void test_function_parsing()
 	test_that("parameter list allows optional trailing comma")
 	{
 		Str source = STR("u32 a, u32 b, u32 c,");
-		WlParser p = wlParserCreate(source);
+		WlParser p = wlParserCreate(STREMPTY, source);
 		WlKind delimeter = WlKind_TkComma;
 
 		List(WlToken) t = wlParseParameterList(&p);

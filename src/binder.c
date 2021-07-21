@@ -150,7 +150,6 @@ typedef struct {
 	int unboundCount;
 
 	List(WlBoundFunction *) functions;
-	ArenaAllocator arena;
 	List(WlScope *) scopes;
 	WlBType currentReturnType;
 	ArenaAllocator arena;

@@ -1,153 +1,10 @@
-#include <sti_base.h>
-
-typedef enum
-{
-	WlKind_Bad,
-	WlKind_EOF,
-	WlKind_Missing,
-	WlKind_Symbol,
-	WlKind_Number,
-	WlKind_FloatNumber,
-	WlKind_String,
-
-	WlKind_BinaryOperators_start,
-	WlKind_OpPlus,
-	WlKind_OpMinus,
-	WlKind_OpStar,
-	WlKind_OpSlash,
-	WlKind_OpPercent,
-	WlKind_OpDoubleEquals,
-	WlKind_OpBangEquals,
-	WlKind_BinaryOperators_End,
-
-	WlKind_OpEquals,
-
-	WlKind_TkParenOpen,
-	WlKind_TkParenClose,
-	WlKind_TkCurlyOpen,
-	WlKind_TkCurlyClose,
-	WlKind_TkComma,
-	WlKind_TkSemicolon,
-
-	WlKind_Keywords_Start,
-	WlKind_KwTrue,
-	WlKind_KwFalse,
-	WlKind_KwIf,
-	WlKind_KwElse,
-	WlKind_KwSwitch,
-	WlKind_KwCase,
-	WlKind_KwDefault,
-	WlKind_KwWhile,
-	WlKind_KwFor,
-	WlKind_KwIn,
-	WlKind_KwOut,
-	WlKind_KwInout,
-	WlKind_KwBreak,
-	WlKind_KwContinue,
-	WlKind_KwNamespace,
-	WlKind_KwEnum,
-	WlKind_KwStruct,
-	WlKind_KwType,
-	WlKind_KwReturn,
-	WlKind_KwImport,
-	WlKind_KwExport,
-	WlKind_Keywords_End,
-
-	WlKind_Syntax_Start,
-	WlKind_StFunction,
-	WlKind_StFunctionParameter,
-	WlKind_StVariableDeclaration,
-	WlKind_StVariableAssignement,
-	WlKind_StExpressionStatement,
-	WlKind_StReturnStatement,
-	WlKind_StCall,
-	WlKind_StRef,
-	WlKind_StBinaryExpression,
-	WlKind_StType,
-	WlKind_StBlock,
-	WlKind_StExpression,
-	WlKind_StImport,
-	WlKind_Syntax_End,
-} WlKind;
-
-char *WlKindText[] = {
-	"<bad>",
-	"<EOF>",
-	"<missing>",
-	"<symbol>",
-	"<number>",
-	"<floatnumber>",
-	"<string>",
-	"<binary start>",
-	"+",
-	"-",
-	"*",
-	"/",
-	"%",
-	"==",
-	"!=",
-	"<binary end>",
-	"=",
-	"(",
-	")",
-	"{",
-	"}",
-	",",
-	";",
-	"<keywords start>",
-	"true",
-	"false",
-	"if",
-	"else",
-	"switch",
-	"case",
-	"default",
-	"while",
-	"for",
-	"in",
-	"out",
-	"inout",
-	"break",
-	"continue",
-	"namespace",
-	"enum",
-	"struct",
-	"type",
-	"return",
-	"import",
-	"export",
-	"<keywords end>",
-
-	"<syntax start>",
-	"WlKind_StFunction",
-	"WlKind_StFunctionParameter",
-	"WlKind_StVariableDeclaration",
-	"WlKind_StVariableAssignement",
-	"WlKind_StExpressionStatement",
-	"WlKind_StReturnStatement",
-	"WlKind_StCall",
-	"WlKind_StRef",
-	"WlKind_StBinaryExpression",
-	"WlKind_StType",
-	"WlKind_StBlock",
-	"WlKind_StExpression",
-	"WlKind_Stimport",
-	"<syntax end>",
-};
+#include <walc.h>
 
 typedef struct {
-	WlKind kind;
-	union {
-		i64 valueNum;
-		f64 valueFloat;
-		Str valueStr;
-		void *valuePtr;
-	};
-} WlToken;
-
-typedef struct {
+	Str filename;
 	Str source;
 	int index;
+	List(WlDiagnostic) diagnostics;
 } WlLexer;
 
 bool isNewline(char c) { return c == '\r' || c == '\n'; }
@@ -166,18 +23,18 @@ bool isCompilerReserved(char c)
 bool isSymbol(char c) { return !isCompilerReserved(c); }
 bool isSymbolStart(char c) { return !isDigit(c) && !isCompilerReserved(c); }
 
-WlLexer wlLexerCreate(Str source)
+WlLexer wlLexerCreate(Str filename, Str source)
 {
-	// TODO: make dynamic
-	WlToken *tokens = malloc(sizeof(WlToken) * 0xFF);
-
+	if (strEqual(filename, STREMPTY)) filename = STR("<compiler generated source>");
 	return (WlLexer){
+		.filename = filename,
 		.source = source,
 		.index = 0,
+		.diagnostics = listNew(),
 	};
 }
 
-void wlLexerFree(WlLexer *l) {}
+void wlLexerFree(WlLexer *l) { listFree(&l->diagnostics); }
 
 char wlLexerCurrent(WlLexer *l) { return l->index < l->source.len ? l->source.buf[l->index] : '\0'; }
 char wlLexerLookahead(WlLexer *l, int n) { return l->index + n < l->source.len ? l->source.buf[l->index + n] : '\0'; }
@@ -192,6 +49,13 @@ void wlLexerTrim(WlLexer *l)
 {
 	while (isWhitespace(wlLexerCurrent(l)))
 		l->index++;
+}
+
+WlToken lexerReport(WlLexer *l, WlDiagnosticKind kind, int start, int end)
+{
+	WlDiagnostic d = {.kind = kind, .span = spanFromRange(l->filename, l->source, start, l->index)};
+	listPush(&l->diagnostics, d);
+	return (WlToken){.kind = WlKind_Bad};
 }
 
 WlToken wlLexerLexToken(WlLexer *l)
@@ -214,7 +78,9 @@ lexStart:
 		int level = 0;
 		l->index += 2;
 		while (true) {
-			if (wlLexerCurrent(l) == '\0') PANIC("Unexpected EOF");
+			if (wlLexerCurrent(l) == '\0') {
+				return lexerReport(l, UnterminatedCommentDiagnostic, l->index - 2, l->index);
+			}
 
 			if (wlLexerCurrent(l) == '/' && wlLexerLookahead(l, 1) == '*') {
 				level++;
@@ -246,7 +112,7 @@ lexStart:
 		if (wlLexerLookahead(l, 1) == '=')
 			return wlLexerBasic(l, 2, WlKind_OpDoubleEquals);
 		else
-			return wlLexerBasic(l, 2, WlKind_OpEquals);
+			return wlLexerBasic(l, 1, WlKind_OpEquals);
 		break;
 	case '!':
 		if (wlLexerLookahead(l, 1) == '=') {
@@ -269,7 +135,7 @@ lexStart:
 			l->index++;
 
 		if (wlLexerCurrent(l) == '\0') {
-			PANIC("unexpected EOF, expected '\"'");
+			return lexerReport(l, UnterminatedStringDiagnostic, start, l->index);
 		}
 		Str value = strSlice(l->source, start, l->index - start);
 		l->index++;
@@ -371,8 +237,7 @@ lexStart:
 			return (WlToken){.kind = WlKind_Symbol, .valueStr = symbolName};
 		} else {
 			l->index++;
-			// PANIC("unexpected character '%c'", current);
-			return (WlToken){.kind = WlKind_Bad};
+			return lexerReport(l, UnexpectedCharacterDiagnostic, l->index - 1, l->index);
 		}
 	} break;
 	}
@@ -470,20 +335,19 @@ typedef struct {
 
 typedef struct {
 	WlLexer lexer;
-	WlToken *topLevelDeclarations;
-	int topLevelCount;
+	List(WlToken) topLevelDeclarations;
 	ArenaAllocator arena;
 	WlToken tokens[PARSERMAXLOOKAHEAD];
 	int tokenIndex;
 	int lookaheadCount;
 } WlParser;
 
-WlParser wlParserCreate(Str source)
+WlParser wlParserCreate(Str filename, Str source)
 {
-	WlLexer l = wlLexerCreate(source);
+	WlLexer l = wlLexerCreate(filename, source);
 	return (WlParser){
 		.lexer = l,
-		.topLevelDeclarations = malloc(sizeof(WlToken) * 0xFF),
+		.topLevelDeclarations = listNew(),
 		.arena = arenaCreate(),
 		.tokens = {0},
 		.lookaheadCount = 0,
@@ -524,11 +388,7 @@ WlToken wlParserMatch_impl(WlParser *p, WlKind kind, const char *file, int line)
 }
 #define wlParserMatch(p, k) wlParserMatch_impl(p, k, __FILE__, __LINE__)
 
-void wlParserAddTopLevelStatement(WlParser *p, WlToken tk)
-{
-	if (p->topLevelCount > 0xFF) TODO("Make top level count growable");
-	p->topLevelDeclarations[p->topLevelCount++] = tk;
-}
+void wlParserAddTopLevelStatement(WlParser *p, WlToken tk) { listPush(&p->topLevelDeclarations, tk); }
 
 WlToken wlParseExpression(WlParser *p);
 
@@ -809,7 +669,7 @@ WlParser wlParserFree(WlParser *p)
 {
 	arenaFree(&p->arena);
 	wlLexerFree(&p->lexer);
-	free(p->topLevelDeclarations);
+	listFree(&p->topLevelDeclarations);
 }
 
 void wlPrint(WlToken tk);

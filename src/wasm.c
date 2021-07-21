@@ -1,3 +1,6 @@
+#ifndef WASM_H
+#define WASM_H
+
 /*
 Lighweight C API for generating wasm bytecode
 
@@ -922,3 +925,5 @@ void wasmPushOpTableFill(DynamicBuf *body, WasmTableIdx x)
 	dynamicBufPush(body, 0x11);
 	leb128EncodeU(x, body);
 }
+
+#endif // WASM_H
