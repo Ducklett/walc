@@ -154,6 +154,7 @@ bool isCompilerReserved(char c);
 bool isSymbol(char c);
 bool isSymbolStart(char c);
 
+#define SPANEMPTY ((WlSpan){0})
 typedef struct WlSpan {
 	Str filename;
 	Str source;
@@ -168,6 +169,8 @@ typedef enum
 	UnterminatedStringDiagnostic,
 	UnexpectedTokenDiagnostic,
 	UnexpectedTokenInPrimaryExpressionDiagnostic,
+	VariableAlreadyExistsDiagnostic,
+	VariableNotFoundDiagnostic,
 } WlDiagnosticKind;
 
 typedef struct {
@@ -178,12 +181,14 @@ typedef struct {
 		void *pointer1;
 		int num1;
 		WlKind kind1;
+		Str str1;
 	};
 	union {
 		double float2;
 		void *pointer2;
 		int num2;
 		WlKind kind2;
+		Str str2;
 	};
 } WlDiagnostic;
 

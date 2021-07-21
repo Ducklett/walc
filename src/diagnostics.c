@@ -24,9 +24,12 @@ void diagnosticPrint(WlDiagnostic d)
 	while (lineEnd < d.span.source.len && !isNewline(d.span.source.buf[++lineEnd])) {
 	}
 
-	Str lineSlice = strSlice(d.span.source, lineStart, lineEnd);
+	printf("%d %d\n", lineStart, lineEnd);
 
-	printf("%s%.*s%s: %sfatal error:%s ", TERMBOLD, STRPRINT(d.span.filename), TERMCLEAR, TERMRED, TERMCLEAR);
+	Str lineSlice = strSlice(d.span.source, lineStart, lineEnd - lineStart);
+
+	printf("%s%.*s:%d:%d:%s %sfatal error:%s ", TERMBOLD, STRPRINT(d.span.filename), d.span.start, d.span.len,
+		   TERMCLEAR, TERMRED, TERMCLEAR);
 
 	switch (d.kind) {
 	case UnterminatedCommentDiagnostic: {
@@ -46,6 +49,13 @@ void diagnosticPrint(WlDiagnostic d)
 	case UnexpectedTokenInPrimaryExpressionDiagnostic: {
 		printf("Unexpected token %s%.*s%s while parsing primary expression\n", TERMBOLDCYAN, STRPRINT(errSlice),
 			   TERMCLEAR);
+	} break;
+	case VariableAlreadyExistsDiagnostic: {
+
+		printf("Redeclaration of variable %s%.*s\n", TERMBOLDCYAN, d.str1, TERMCLEAR);
+	} break;
+	case VariableNotFoundDiagnostic: {
+		printf("Unresolved variable %s%.*s%s\n", TERMBOLDCYAN, d.str1, TERMCLEAR);
 	} break;
 	default: PANIC("unhandled diagnostic kind %d\n", d.kind);
 	}

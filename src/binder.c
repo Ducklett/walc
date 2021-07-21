@@ -151,6 +151,7 @@ typedef struct {
 
 	List(WlBoundFunction *) functions;
 	List(WlScope *) scopes;
+	List(WlDiagnostic) diagnostics;
 	WlBType currentReturnType;
 	ArenaAllocator arena;
 } WlBinder;
@@ -160,7 +161,9 @@ WlSymbol *wlFindSymbol(WlBinder *b, Str name, WlSymbolFlags flags, bool recurse)
 WlSymbol *wlPushSymbol(WlBinder *b, Str name, WlBType type, WlSymbolFlags flags)
 {
 	WlSymbol *existing = wlFindSymbol(b, name, WlSFlag_None, false);
-	if (existing) PANIC("variable by name %.*s already exists", existing->name);
+	if (existing) {
+		return NULL;
+	}
 
 	List(WlSymbol *) symbols = listPeek(&b->scopes)->symbols;
 
@@ -170,6 +173,34 @@ WlSymbol *wlPushSymbol(WlBinder *b, Str name, WlBType type, WlSymbolFlags flags)
 	listPeek(&b->scopes)->symbols = symbols;
 
 	return newSymbol;
+}
+
+WlSymbol *wlPushVariable(WlBinder *b, WlSpan span, Str name, WlBType type)
+{
+	WlSymbol *s = wlPushSymbol(b, name, type, WlSFlag_Variable);
+
+	if (!s) {
+		WlDiagnostic d = {.kind = VariableAlreadyExistsDiagnostic, .span = span, .str1 = name};
+		listPush(&b->diagnostics, d);
+	}
+	return s;
+}
+
+WlSymbol *wlFindVariable(WlBinder *b, WlSpan span, Str name, WlBType type)
+{
+	WlSymbol *variable = wlFindSymbol(b, name, WlSFlag_Variable, true);
+
+	if (!variable) {
+		WlDiagnostic d = {.kind = VariableNotFoundDiagnostic, .span = span, .str1 = name};
+		listPush(&b->diagnostics, d);
+		return NULL;
+	}
+
+	if (type != variable->type) {
+		PANIC("Type mismatch! expected %d, got %d", type, variable->type);
+	}
+
+	return variable;
 }
 
 WlSymbol *wlFindSymbolInScope(WlBinder *b, WlScope *s, Str name, WlSymbolFlags flags, bool recurse)
@@ -196,6 +227,7 @@ WlSymbol *wlFindSymbolInScope(WlBinder *b, WlScope *s, Str name, WlSymbolFlags f
 WlSymbol *wlFindSymbol(WlBinder *b, Str name, WlSymbolFlags flags, bool recurse)
 {
 	WlScope *s = listPeek(&b->scopes);
+
 	return wlFindSymbolInScope(b, s, name, flags, recurse);
 }
 
@@ -233,6 +265,9 @@ WlbNode wlBindExpression(WlBinder *b, WlToken expression, WlBType type)
 		return (WlbNode){.kind = WlBKind_NumberLiteral, .dataFloat = expression.valueFloat, .type = type};
 	} break;
 	case WlKind_String: {
+		if (type != WlBType_str) {
+			PANIC("expected type %d but got string", type);
+		}
 		return (WlbNode){.kind = WlBKind_StringLiteral, .dataStr = expression.valueStr, .type = WlBType_str};
 	} break;
 	case WlKind_StBinaryExpression: {
@@ -278,12 +313,7 @@ WlbNode wlBindExpression(WlBinder *b, WlToken expression, WlBType type)
 
 	case WlKind_StRef: {
 		Str name = expression.valueStr;
-		WlSymbol *variable = wlFindSymbol(b, name, WlSFlag_Variable, true);
-		if (type != variable->type) {
-			PANIC("Type mismatch! expected %d, got %d", type, variable->type);
-		}
-
-		if (!variable) PANIC("failed to find variable by name %.*s", STRPRINT(name));
+		WlSymbol *variable = wlFindVariable(b, expression.span, name, type);
 
 		return (WlbNode){.kind = WlBKind_Ref, .data = variable, .type = variable->type};
 	}
@@ -323,7 +353,10 @@ WlbNode wlBindStatement(WlBinder *b, WlToken statement)
 		WlBoundVariable *bvar = arenaMalloc(sizeof(WlBoundVariable), &b->arena);
 
 		WlBType type = wlBindType(var.type);
-		bvar->symbol = wlPushSymbol(b, var.name.valueStr, type, WlSFlag_Variable);
+		Str name = var.name.valueStr;
+		WlSpan span = var.name.span;
+		bvar->symbol = wlPushVariable(b, span, name, type);
+
 		if (var.initializer.kind == WlKind_Missing) {
 			bvar->initializer = (WlbNode){.kind = WlBKind_None};
 		} else {
@@ -383,23 +416,32 @@ WlbNode wlBindBlock(WlBinder *b, WlSyntaxBlock body, bool createScope)
 	return (WlbNode){.kind = WlBKind_Block, .type = WlBType_u0, .data = blk};
 }
 
-void bindPrint(WlBinder *b) {}
-
-WlBinder wlBind(WlToken *declarations, int declarationCount)
+WlBinder wlBinderCreate(WlToken *declarations, int declarationCount)
 {
 	WlBinder b = {
 		.unboundDeclarations = declarations,
 		.unboundCount = declarationCount,
 		.functions = listNew(),
 		.scopes = listNew(),
+		.diagnostics = listNew(),
 		.arena = arenaCreate(),
 	};
 
 	//	 push the global scope
 	WlCreateAndPushScope(&b);
+	return b;
+}
 
-	// hardcoded print extern for now
-	bindPrint(&b);
+void wlBinderFree(WlBinder *b)
+{
+	arenaFree(&b->arena);
+	listFree(&b->functions);
+	listFree(&b->scopes);
+}
+
+WlBinder wlBind(WlToken *declarations, int declarationCount)
+{
+	WlBinder b = wlBinderCreate(declarations, declarationCount);
 
 	for (int i = 0; i < declarationCount; i++) {
 		WlToken tk = declarations[i];
@@ -466,6 +508,7 @@ WlBinder wlBind(WlToken *declarations, int declarationCount)
 
 			WlPopScope(&b);
 		} break;
+		case WlKind_Bad: break;
 		default: PANIC("Unhandled declaration kind %s", WlKindText[tk.kind]); break;
 		}
 	}

@@ -4,6 +4,7 @@
 
 #include <sti_test.h>
 
+#include <binder.test.c>
 #include <leb128.test.c>
 #include <parser.test.c>
 #include <sti.test.c>
@@ -15,4 +16,5 @@ void test_main()
 	test_leb128();
 	test_wasm();
 	test_parser();
+	test_binder();
 }
