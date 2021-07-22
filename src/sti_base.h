@@ -77,7 +77,47 @@ typedef double f64;
 #define TERMBOLDMAGENTA "\033[1;35m"
 #define TERMBOLDCYAN	"\033[1;36m"
 
-void *smalloc(size_t size);
+// prints the provided message and then kills the program
+// always returns {false} so it can be used in binary expressions: {doThis() || panic("Failed")}
+bool panic_impl(const char *msg, const char *filename, const int line, ...)
+{
+	printf("%s%s %d PANIC: %s", TERMRED, filename, line, TERMCLEAR);
+	va_list args;
+	va_start(args, line);
+	vfprintf(stderr, msg, args);
+	va_end(args);
+
+	printf("\n");
+	exit(1);
+	return false;
+}
+
+#define PANIC(msg, ...) panic_impl(msg, __FILE__, __LINE__, ##__VA_ARGS__)
+
+// indicates that a piece of code hasn't been implemented yet
+// prints the TODO message and then kills the program
+// return false so it can be chained into expressions like foo && TODO()
+bool todo_impl(const char *msg, const char *filename, const int line, ...)
+{
+	printf("%s%s %d TODO: %s", TERMBOLD, filename, line, TERMCLEAR);
+	va_list args;
+	va_start(args, line);
+	vfprintf(stderr, msg, args);
+	va_end(args);
+
+	printf("\n");
+	exit(1);
+}
+
+#define TODO(msg, ...) todo_impl(msg, __FILE__, __LINE__, ##__VA_ARGS__)
+
+// "safe" malloc wrapper that instantly shuts down the application on allocation failure
+void *smalloc(size_t size)
+{
+	void *data = malloc(size);
+	if (!data) PANIC("Allocation failed");
+	return data;
+}
 
 // A string encdoded as a character buffer and a length
 // The str may or may not be null terminated depending on how it was created
@@ -231,7 +271,7 @@ typedef struct {
 	int capacity;
 } ListHead;
 
-void listEnsureCapacity(void **lp, int size);
+void listEnsureCapacity__(void **lp, int size);
 #define List(T)			   T *
 #define listNew()		   NULL
 #define LISTHEAD(l)		   (l == NULL ? NULL : (ListHead *)(((u8 *)(l)) - sizeof(ListHead)))
@@ -241,17 +281,32 @@ void listEnsureCapacity(void **lp, int size);
 #define listIsNotEmpty(l)  (listLen(l) >= 1)
 #define listCapacity(l)	   ((l) == NULL ? 0 : LISTHEAD(l)->capacity)
 // pushes {v} onto the end of the list and returns {v}
-#define listPush(lp, v) (listEnsureCapacity((void **)lp, sizeof(**lp)), (*(lp))[LISTHEAD(*(lp))->len++] = v, v)
+#define listPush(lp, v) (listEnsureCapacity__((void **)lp, sizeof(**lp)), (*(lp))[LISTHEAD(*(lp))->len++] = v, v)
 // pops value off the end of the list and returns it
 #define listPop(lp)	 (listLen(*(lp)) == 0 ? PANIC("Popping and empty stack") : (*(lp))[--LISTHEAD(*(lp))->len])
 #define listPeek(lp) (listLen(*(lp)) == 0 ? NULL : (*(lp))[LISTHEAD(*(lp))->len - 1])
 #define listFree(lp) (free(LISTHEAD(*(lp))), *(lp) = NULL)
 
-void listEnsureCapacity(void **lp, int size)
+#define listReserve(lp, n) listReserve_impl(lp, n, sizeof(**(lp)))
+
+void listReserve_impl(void **lp, int itemCount, int size)
+{
+	int newCapacity = max(itemCount, listLen(*lp));
+
+	ListHead *headPtr = calloc(1, (newCapacity * size) + sizeof(ListHead));
+	*headPtr = (ListHead){.len = listLen(*lp), .capacity = newCapacity};
+
+	void *newL = ((u8 *)headPtr) + sizeof(ListHead);
+	memcpy(newL, *lp, listCapacity(*lp) * size);
+	free(LISTHEAD(*lp));
+	*lp = newL;
+}
+
+void listEnsureCapacity__(void **lp, int size)
 {
 	if (listCapacity(*lp) == 0 || listLen(*lp) + 1 >= listCapacity(*lp)) {
 		int newCapacity = max(0x10, listCapacity(*lp) * 2);
-		ListHead *headPtr = malloc((newCapacity * size) + sizeof(ListHead));
+		ListHead *headPtr = calloc(1, (newCapacity * size) + sizeof(ListHead));
 		*headPtr = (ListHead){.len = listLen(*lp), .capacity = newCapacity};
 
 		void *newL = ((u8 *)headPtr) + sizeof(ListHead);
@@ -308,46 +363,51 @@ void stringFree(String *b)
 	(*b) = (String){0};
 }
 
-// prints the provided message and then kills the program
-// always returns {false} so it can be used in binary expressions: {doThis() || panic("Failed")}
-bool panic_impl(const char *msg, const char *filename, const int line, ...)
-{
-	printf("%s%s %d PANIC: %s", TERMRED, filename, line, TERMCLEAR);
-	va_list args;
-	va_start(args, line);
-	vfprintf(stderr, msg, args);
-	va_end(args);
+typedef struct {
+	List(Str) keys;
+	List(void *) values;
+} Map;
 
-	printf("\n");
-	exit(1);
-	return false;
+Map mapCreate()
+{
+	Map m = {
+		.keys = listNew(),
+		.values = listNew(),
+	};
+	listReserve(&m.keys, 0x10);
+	listReserve(&m.values, 0x10);
+	return m;
 }
 
-#define PANIC(msg, ...) panic_impl(msg, __FILE__, __LINE__, ##__VA_ARGS__)
-
-// indicates that a piece of code hasn't been implemented yet
-// prints the TODO message and then kills the program
-// return false so it can be chained into expressions like foo && TODO()
-bool todo_impl(const char *msg, const char *filename, const int line, ...)
+Map mapFree(Map *m)
 {
-	printf("%s%s %d TODO: %s", TERMBOLD, filename, line, TERMCLEAR);
-	va_list args;
-	va_start(args, line);
-	vfprintf(stderr, msg, args);
-	va_end(args);
-
-	printf("\n");
-	exit(1);
+	listFree(&m->keys);
+	listFree(&m->values);
 }
 
-#define TODO(msg, ...) todo_impl(msg, __FILE__, __LINE__, ##__VA_ARGS__)
+int strHash(Str key) { return key.len == 0 ? 0 : key.buf[0]; }
 
-// "safe" malloc wrapper that instantly shuts down the application on allocation failure
-void *smalloc(size_t size)
+bool mapHas(Map *m, Str key)
 {
-	void *data = malloc(size);
-	if (!data) PANIC("Allocation failed");
-	return data;
+	int hash = strHash(key) % listCapacity(m->keys);
+	return m->values[hash] != 0;
+}
+
+void *mapGet(Map *m, Str key)
+{
+	int hash = strHash(key) % listCapacity(m->keys);
+	return m->values[hash];
+}
+
+void mapSet(Map *m, Str key, void *value)
+{
+	int hash = strHash(key) % listCapacity(m->keys);
+	if (strEqual(m->keys[hash], STREMPTY) || strEqual(m->keys[hash], key)) {
+		m->values[hash] = value;
+		m->keys[hash] = key;
+	} else {
+		PANIC("collision on key %.*s (hash %d)", STRPRINT(key), hash);
+	}
 }
 
 // writes all the bytes from the {buffer} into the file

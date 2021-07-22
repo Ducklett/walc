@@ -197,6 +197,21 @@ void test_sti_list()
 		test_assert("Length becomes 0", listLen(numList) == 0);
 		test_assert("Capacity becomes 0", listCapacity(numList) == 0);
 	}
+
+	test_that("Empty space in list is always zeroed")
+	{
+		List(int) l = listNew();
+
+		int capacity = 0x1000;
+		listReserve(&l, capacity);
+
+		test_assert("list capacity grew", listCapacity(l) == capacity);
+		for (int i = 0; i < listCapacity(l); i++) {
+			test_assert(cstrFormat("%d is zero", i), l[i] == 0);
+		}
+
+		listFree(&l);
+	}
 }
 
 void test_sti_string()
@@ -230,6 +245,29 @@ void test_sti_string()
 		stringFree(&str);
 
 		test_assert("strings become empty after you stringFree() them", strEqual(stringToStr(str), STREMPTY));
+	}
+}
+
+void test_sti_map()
+{
+	test_section("sti map");
+
+	const char *data1 = "world";
+	const char *data2 = "the quick brown fox jumped over the lazy dog";
+
+	test_that("map can store and retrieve items")
+	{
+		Map m = mapCreate();
+		mapSet(&m, STR("Hello"), data1);
+		mapSet(&m, STR("Sentence"), data2);
+
+		const char *val = mapGet(&m, STR("Hello"));
+		test_assert("inserts and retrieves first value", strEqual(strFromCstr(val), strFromCstr(data1)));
+
+		const char *val2 = mapGet(&m, STR("Sentence"));
+		test_assert("inserts and retrieves second value", strEqual(strFromCstr(val2), strFromCstr(data2)));
+
+		test_assert_panic("panics on hash collision", mapSet(&m, STR("Haha"), data1));
 	}
 }
 
@@ -277,5 +315,6 @@ void test_sti()
 	test_sti_dynamicBuf();
 	test_sti_list();
 	test_sti_string();
+	test_sti_map();
 	test_sti_arena();
 }
