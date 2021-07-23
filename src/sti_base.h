@@ -368,18 +368,22 @@ void stringFree(String *b)
 typedef struct {
 	List(Str) keys;
 	List(void *) values;
+	size_t itemCount;
 } Map;
 
-Map mapCreate()
+Map mapCreateWithCapacity(size_t capacity)
 {
 	Map m = {
 		.keys = listNew(),
 		.values = listNew(),
+		.itemCount = 0,
 	};
-	listReserve(&m.keys, 0x10);
-	listReserve(&m.values, 0x10);
+	listReserve(&m.keys, capacity);
+	listReserve(&m.values, capacity);
 	return m;
 }
+
+Map mapCreate() { return mapCreateWithCapacity(0x10); }
 
 Map mapFree(Map *m)
 {
@@ -387,28 +391,65 @@ Map mapFree(Map *m)
 	listFree(&m->values);
 }
 
-int strHash(Str key) { return key.len == 0 ? 0 : key.buf[0]; }
-
-bool mapHas(Map *m, Str key)
+size_t strHash(Str key)
 {
-	int hash = strHash(key) % listCapacity(m->keys);
-	return m->values[hash] != 0;
+	// improv hash, should be replaced
+	return key.len == 0 ? 0 : key.buf[0] * 33 + key.buf[key.len - 1] * 25 + key.buf[key.len / 2] * 45 * 0xFF;
 }
 
-void *mapGet(Map *m, Str key)
+int collisions = 0;
+int mapIndexForKey(Map *m, Str key)
 {
-	int hash = strHash(key) % listCapacity(m->keys);
-	return m->values[hash];
+	size_t capacity = listCapacity(m->keys);
+	size_t i = strHash(key) % capacity;
+
+	while (true) {
+		if (strEqual(m->keys[i], STREMPTY) || strEqual(m->keys[i], key)) {
+			return i;
+		} else {
+			// got a collision, try to find a spot nearby
+			i = (i + 1) % capacity;
+		}
+	}
 }
+
+void *mapGet(Map *m, Str key) { return m->values[mapIndexForKey(m, key)]; }
+
+#define mapHas mapGet
 
 void mapSet(Map *m, Str key, void *value)
 {
-	int hash = strHash(key) % listCapacity(m->keys);
-	if (strEqual(m->keys[hash], STREMPTY) || strEqual(m->keys[hash], key)) {
-		m->values[hash] = value;
-		m->keys[hash] = key;
-	} else {
-		PANIC("collision on key %.*s (hash %d)", STRPRINT(key), hash);
+	m->itemCount++;
+	size_t capacity = listCapacity(m->keys);
+
+	if (m->itemCount > capacity / 2) {
+		size_t newCapacity = max(capacity * 2, 0x10);
+		Map newMap = mapCreateWithCapacity(newCapacity);
+
+		for (size_t i = 0; i < capacity; i++) {
+			if (m->values[i]) {
+				mapSet(&newMap, m->keys[i], m->values[i]);
+			}
+		}
+
+		capacity = newCapacity;
+		mapFree(m);
+		*m = newMap;
+	}
+
+	size_t i = mapIndexForKey(m, key);
+
+	m->values[i] = value;
+	m->keys[i] = key;
+}
+
+void mapDelete(Map *m, Str key) { mapSet(m, key, NULL); }
+void mapClear(Map *m)
+{
+	int capacity = listCapacity(m->keys);
+	for (size_t i = 0; i < capacity; i++) {
+		m->keys[i] = STREMPTY;
+		m->values[i] = NULL;
 	}
 }
 

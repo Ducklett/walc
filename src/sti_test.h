@@ -116,6 +116,16 @@ void test_assert_impl(const char *msg, bool pass)
 		testDidPanic = false;                \
 	}
 
+#define test_assert_nopanic(msg, op)          \
+	{                                         \
+		testPanic = true;                     \
+		op;                                   \
+		test_assert_impl(msg, !testDidPanic); \
+		testPanic = false;                    \
+		if (testDidPanic) break;              \
+		testDidPanic = false;                 \
+	}
+
 #define TESTPLUR(n) (n == 1 ? "test" : "tests")
 
 void TEST_ENTRYPOINT();

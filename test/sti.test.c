@@ -267,7 +267,28 @@ void test_sti_map()
 		const char *val2 = mapGet(&m, STR("Sentence"));
 		test_assert("inserts and retrieves second value", strEqual(strFromCstr(val2), strFromCstr(data2)));
 
-		test_assert_panic("panics on hash collision", mapSet(&m, STR("Haha"), data1));
+		test_assert_nopanic("doesn't panic on hash collision", mapSet(&m, STR("Hlo"), data2));
+
+		const char *val3 = mapGet(&m, STR("Hlo"));
+		test_assert("retrieves value after hash collision", strEqual(strFromCstr(val3), strFromCstr(data2)));
+	}
+
+	test_that("map grows when it is half full")
+	{
+		Map m = mapCreate();
+		test_assert("map starts with a capacity of 0x10", listCapacity(m.keys) == 0x10);
+		for (int i = 0; i < 0x1000; i++) {
+			Str indexAsString = strFormat("%d", i);
+			mapSet(&m, indexAsString, indexAsString.buf);
+		}
+		test_assert("map capacity grows after adding items", listCapacity(m.keys) > 0x10);
+
+		for (int i = 0; i < 0x1000; i++) {
+			Str indexAsString = strFormat("%d", i);
+			char *value = mapGet(&m, indexAsString);
+			test_assert(cstrFormat("%d still has the right value after growing", i),
+						strEqual(indexAsString, strFromCstr(value)));
+		}
 	}
 }
 
