@@ -1,11 +1,21 @@
 #ifndef STITEST_H
 #define STITEST_H
 
-#include <sti_base.h>
-
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+// really ugly hack to get custom PANIC behaviour while testing sti_base itself
+#include <stdbool.h>
+
+static bool testSkipSection = false;
+static bool testPanic = false;
+static bool testDidPanic = false;
+
+#undef PANIC
+#define PANIC(msg, ...) (testPanic ? testDidPanic = true : panic_impl(msg, __FILE__, __LINE__, ##__VA_ARGS__))
+
+#include <sti_base.h>
 
 // for readability
 
@@ -19,12 +29,6 @@ static int testPass;
 static int testFail;
 static const char *current_test;
 static const char *current_test_error;
-static bool testSkipSection = false;
-static bool testPanic = false;
-static bool testDidPanic = false;
-
-#undef PANIC
-#define PANIC(msg, ...) (testPanic ? testDidPanic = true : panic_impl(msg, __FILE__, __LINE__, ##__VA_ARGS__))
 
 static void test_internal(const char *msg, bool pass);
 

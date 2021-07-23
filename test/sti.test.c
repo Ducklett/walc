@@ -252,8 +252,8 @@ void test_sti_map()
 {
 	test_section("sti map");
 
-	const char *data1 = "world";
-	const char *data2 = "the quick brown fox jumped over the lazy dog";
+	char *data1 = "world";
+	char *data2 = "the quick brown fox jumped over the lazy dog";
 
 	test_that("map can store and retrieve items")
 	{

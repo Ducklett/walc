@@ -92,7 +92,9 @@ bool panic_impl(const char *msg, const char *filename, const int line, ...)
 	return false;
 }
 
+#ifndef PANIC
 #define PANIC(msg, ...) panic_impl(msg, __FILE__, __LINE__, ##__VA_ARGS__)
+#endif
 
 // indicates that a piece of code hasn't been implemented yet
 // prints the TODO message and then kills the program
