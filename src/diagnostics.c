@@ -5,10 +5,10 @@ WlSpan spanFromRange(Str filename, Str source, size_t start, size_t end)
 	return (WlSpan){.filename = filename, .source = source, .start = start, .len = end - start};
 }
 
-WlSpan spanFromTokens(Str filename, Str source, WlToken start, WlToken end)
+WlSpan spanFromTokens(WlToken start, WlToken end)
 {
-	return (WlSpan){.filename = filename,
-					.source = source,
+	return (WlSpan){.filename = start.span.filename,
+					.source = start.span.source,
 					.start = start.span.start,
 					.len = end.span.start + end.span.len};
 }
@@ -56,6 +56,10 @@ void diagnosticPrint(WlDiagnostic d)
 	} break;
 	case VariableNotFoundDiagnostic: {
 		printf("Unresolved variable %s%.*s%s\n", TERMBOLDCYAN, d.str1, TERMCLEAR);
+	} break;
+	case CannotImplicitlyConvertDiagnostic: {
+		printf("Cannot implicitly convert from %s%s%s to %s%s%s\n", TERMBOLDCYAN, WlBTypeText[d.num1], TERMCLEAR,
+			   TERMBOLDCYAN, WlBTypeText[d.num2], TERMCLEAR);
 	} break;
 	default: PANIC("unhandled diagnostic kind %d\n", d.kind);
 	}

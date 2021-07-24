@@ -1,23 +1,4 @@
-#include <parser.c>
-
-typedef enum
-{
-	WlBType_u0,
-	WlBType_bool,
-	WlBType_u32,
-	WlBType_i32,
-	WlBType_u64,
-	WlBType_i64,
-	WlBType_f32,
-	WlBType_f64,
-	WlBType_str,
-	WlBType_end,
-	WlBType_unknown,
-} WlBType;
-
-char *WlBTypeText[] = {
-	"u0", "bool", "u32", "i32", "u64", "i64", "f32", "f64", "str", "<>", "<>",
-};
+#include <walc.h>
 
 WlBType wlBindType(WlToken tk)
 {
@@ -50,6 +31,7 @@ typedef enum
 	WlBKind_BinaryExpression,
 	WlBKind_StringLiteral,
 	WlBKind_NumberLiteral,
+	WlBKind_BoolLiteral,
 } WlBKind;
 
 typedef enum
@@ -99,6 +81,7 @@ typedef struct WlScope {
 typedef struct {
 	WlBKind kind;
 	WlBType type;
+	WlSpan span;
 	union {
 		void *data;
 		Str dataStr;
@@ -186,7 +169,7 @@ WlSymbol *wlPushVariable(WlBinder *b, WlSpan span, Str name, WlBType type)
 	return s;
 }
 
-WlSymbol *wlFindVariable(WlBinder *b, WlSpan span, Str name, WlBType type)
+WlSymbol *wlFindVariable(WlBinder *b, WlSpan span, Str name)
 {
 	WlSymbol *variable = wlFindSymbol(b, name, WlSFlag_Variable, true);
 
@@ -196,9 +179,9 @@ WlSymbol *wlFindVariable(WlBinder *b, WlSpan span, Str name, WlBType type)
 		return NULL;
 	}
 
-	if (type != variable->type) {
-		PANIC("Type mismatch! expected %d, got %d", type, variable->type);
-	}
+	// if (type != variable->type) {
+	// 	PANIC("Type mismatch! expected %d, got %d", type, variable->type);
+	// }
 
 	return variable;
 }
@@ -245,44 +228,122 @@ WlBOperator wlBindOperator(WlToken op)
 	}
 }
 
-bool wlIsNumberType(WlBType t) { return (t >= WlBType_u32 && t <= WlBType_f64); }
+bool wlIsNumberType(WlBType t) { return (t >= WlBType_u8 && t <= WlBType_f64); }
+bool wlIsIntegerType(WlBType t) { return (t >= WlBType_u8 && t <= WlBType_i64); }
 bool wlIsFloatType(WlBType t) { return (t == WlBType_f32 || t == WlBType_f64); }
+bool wlIsConcreteType(WlBType t) { return (t < WlBType_end); }
 
-WlbNode wlBindExpression(WlBinder *b, WlToken expression, WlBType type)
+WlbNode wlBindExpressionOfType(WlBinder *b, WlToken expression, WlBType type);
+
+WlBType resolveBinaryExpressionType(WlBType operandType, WlBOperator op)
+{
+	switch (op) {
+	case WlBOperator_Add: return operandType;
+	case WlBOperator_Subtract: return operandType;
+	case WlBOperator_Divide: return operandType;
+	case WlBOperator_Multiply: return operandType;
+	case WlBOperator_Modulo: return operandType;
+	case WlBOperator_Equal: return WlBType_bool;
+	case WlBOperator_NotEqual: return WlBType_bool;
+	default: PANIC("Unhandled binary expression operator %d", op); break;
+	}
+}
+
+// changes the type of an expression after a more concrete type is found
+void propagateType(WlbNode *expr, WlBType type)
+{
+	assert(!wlIsConcreteType(expr->type));
+
+	switch (expr->kind) {
+	case WlBKind_BinaryExpression: {
+		WlBoundBinaryExpression *bin = expr->data;
+		propagateType(&bin->left, type);
+		propagateType(&bin->right, type);
+		expr->type = type;
+	} break;
+	case WlBKind_NumberLiteral: {
+		if (wlIsFloatType(type) && expr->type == WlBType_integerNumber) {
+			expr->dataFloat = (f64)expr->dataNum;
+		}
+		expr->type = type;
+	} break;
+	}
+}
+
+WlbNode wlBindExpression(WlBinder *b, WlToken expression)
 {
 	switch (expression.kind) {
 	case WlKind_Number: {
-		if (!wlIsNumberType(type)) PANIC("Expected type %d but got number literal", type);
-		if (wlIsFloatType(type)) {
-			// reinterpret the integer as a float
-			return (WlbNode){.kind = WlBKind_NumberLiteral, .dataFloat = expression.valueNum, .type = type};
-		} else {
-			return (WlbNode){.kind = WlBKind_NumberLiteral, .dataNum = expression.valueNum, .type = type};
-		}
+		return (WlbNode){
+			.kind = WlBKind_NumberLiteral,
+			.dataNum = expression.valueNum,
+			.type = WlBType_integerNumber,
+			.span = expression.span,
+		};
 	} break;
 	case WlKind_FloatNumber: {
-		if (!wlIsFloatType(type)) PANIC("Expected type %d but got float literal", type);
-		return (WlbNode){.kind = WlBKind_NumberLiteral, .dataFloat = expression.valueFloat, .type = type};
+		return (WlbNode){
+			.kind = WlBKind_NumberLiteral,
+			.dataFloat = expression.valueFloat,
+			.type = WlBType_floatingNumber,
+			.span = expression.span,
+		};
 	} break;
 	case WlKind_String: {
-		if (type != WlBType_str) {
-			PANIC("expected type %d but got string", type);
-		}
-		return (WlbNode){.kind = WlBKind_StringLiteral, .dataStr = expression.valueStr, .type = WlBType_str};
+		return (WlbNode){
+			.kind = WlBKind_StringLiteral,
+			.dataStr = expression.valueStr,
+			.type = WlBType_str,
+			.span = expression.span,
+		};
+	} break;
+	case WlKind_KwTrue: {
+		return (WlbNode){
+			.kind = WlBKind_BoolLiteral,
+			.dataNum = 1,
+			.type = WlBType_bool,
+			.span = expression.span,
+		};
+	} break;
+	case WlKind_KwFalse: {
+		return (WlbNode){
+			.kind = WlBKind_BoolLiteral,
+			.dataNum = 0,
+			.type = WlBType_bool,
+			.span = expression.span,
+		};
 	} break;
 	case WlKind_StBinaryExpression: {
 		WlBinaryExpression ex = *(WlBinaryExpression *)expression.valuePtr;
 		WlBoundBinaryExpression bex;
-		bex.left = wlBindExpression(b, ex.left, type);
+
+		bex.left = wlBindExpression(b, ex.left);
 		bex.operator= wlBindOperator(ex.operator);
-		bex.right = wlBindExpression(b, ex.right, type);
+		bex.right = wlBindExpression(b, ex.right);
+
+		if (bex.left.type != bex.right.type) {
+			if (bex.left.type == WlBType_integerNumber && bex.right.type == WlBType_floatingNumber) {
+				propagateType(&bex.left, WlBType_floatingNumber);
+			} else if (bex.left.type == WlBType_floatingNumber && bex.right.type == WlBType_integerNumber) {
+				propagateType(&bex.right, WlBType_floatingNumber);
+			} else {
+				PANIC("Binary expression operands must be of same type, got %d %d", bex.left.type, bex.right.type);
+			}
+		}
+
+		WlBType type = resolveBinaryExpressionType(bex.left.type, bex.operator);
 
 		// todo: get the proper return type based on the operator and operands
 
 		WlBoundBinaryExpression *bexp = arenaMalloc(sizeof(WlBoundBinaryExpression), &b->arena);
 		*bexp = bex;
 
-		return (WlbNode){.kind = WlBKind_BinaryExpression, .data = bexp, .type = type};
+		return (WlbNode){
+			.kind = WlBKind_BinaryExpression,
+			.data = bexp,
+			.type = type,
+			.span = expression.span,
+		};
 	}
 	case WlKind_StCall: {
 		WlSyntaxCall call = *(WlSyntaxCall *)expression.valuePtr;
@@ -299,7 +360,7 @@ WlbNode wlBindExpression(WlBinder *b, WlToken expression, WlBType type)
 		if (argLen != expectedArgLen) PANIC("Expected %d arguments but got %d", expectedArgLen, argLen);
 
 		for (int i = 0; i < argLen; i++) {
-			WlbNode arg = wlBindExpression(b, call.args[i * 2], function->function->scope->symbols[i]->type);
+			WlbNode arg = wlBindExpressionOfType(b, call.args[i * 2], function->function->scope->symbols[i]->type);
 			listPush(&args, arg);
 		}
 		bcall.args = args;
@@ -308,18 +369,67 @@ WlbNode wlBindExpression(WlBinder *b, WlToken expression, WlBType type)
 		WlBoundCallExpression *bcallp = arenaMalloc(sizeof(WlBoundCallExpression), &b->arena);
 		*bcallp = bcall;
 
-		return (WlbNode){.kind = WlBKind_Call, .data = bcallp, .type = WlBType_u0};
+		return (WlbNode){.kind = WlBKind_Call, .data = bcallp, .type = WlBType_u0, .span = expression.span};
 	}
 
 	case WlKind_StRef: {
 		Str name = expression.valueStr;
-		WlSymbol *variable = wlFindVariable(b, expression.span, name, type);
+		WlSymbol *variable = wlFindVariable(b, expression.span, name);
 
-		return (WlbNode){.kind = WlBKind_Ref, .data = variable, .type = variable->type};
+		return (WlbNode){.kind = WlBKind_Ref, .data = variable, .type = variable->type, .span = expression.span};
 	}
 
 	default: PANIC("Unhandled expression kind %s", WlKindText[expression.kind]);
 	}
+}
+
+WlBType makeContreteType(WlBType t)
+{
+	switch (t) {
+	case WlBType_integerNumber: return WlBType_i64;
+	case WlBType_floatingNumber: return WlBType_f64;
+	default: return t;
+	}
+}
+
+WlbNode wlBindExpressionOfType(WlBinder *b, WlToken expression, WlBType expectedType)
+{
+	//
+	WlbNode n = wlBindExpression(b, expression);
+
+	if (n.type == expectedType) return n;
+	if (expectedType == WlBType_inferWeak) return n;
+
+	if (expectedType == WlBType_inferStrong) {
+		if (!wlIsConcreteType(n.type)) {
+			propagateType(&n, makeContreteType(n.type));
+		}
+		return n;
+	}
+
+	assert(wlIsConcreteType(expectedType));
+
+	if (!wlIsConcreteType(n.type)) {
+		if ((wlIsIntegerType(expectedType) && n.type == WlBType_floatingNumber)) {
+			// expected int but got float, make it concrete and report error at the end of the function
+			propagateType(&n, makeContreteType(n.type));
+		} else {
+			propagateType(&n, expectedType);
+			return n;
+		}
+	}
+
+	if (n.type != expectedType) {
+		WlDiagnostic d = {.kind = CannotImplicitlyConvertDiagnostic,
+						  .span = n.span,
+						  .num1 = n.type,
+						  .num2 = expectedType};
+		listPush(&b->diagnostics, d);
+		// PANIC("Unexpected type %d, expected %d", n.type, expectedType);
+		n.type = expectedType;
+	}
+
+	return n;
 }
 
 WlbNode wlBindStatement(WlBinder *b, WlToken statement)
@@ -332,7 +442,7 @@ WlbNode wlBindStatement(WlBinder *b, WlToken statement)
 
 		if (ret.expression.kind != WlKind_Missing) {
 			WlBType t = b->currentReturnType;
-			bret.expression = wlBindExpression(b, ret.expression, t);
+			bret.expression = wlBindExpressionOfType(b, ret.expression, t);
 		} else {
 			if (b->currentReturnType != WlBType_u0) {
 				PANIC("Expected return to have expression because return type is not u0");
@@ -342,11 +452,11 @@ WlbNode wlBindStatement(WlBinder *b, WlToken statement)
 
 		WlBoundReturn *bretp = arenaMalloc(sizeof(WlBoundReturn), &b->arena);
 		*bretp = bret;
-		return (WlbNode){.kind = WlBKind_Return, .data = bretp, .type = b->currentReturnType};
+		return (WlbNode){.kind = WlBKind_Return, .data = bretp, .type = b->currentReturnType, .span = statement.span};
 	} break;
 	case WlKind_StExpressionStatement: {
 		WlExpressionStatement ex = *(WlExpressionStatement *)statement.valuePtr;
-		return wlBindExpression(b, ex.expression, WlBType_u0);
+		return wlBindExpressionOfType(b, ex.expression, WlBType_u0);
 	} break;
 	case WlKind_StVariableDeclaration: {
 		WlSyntaxVariableDeclaration var = *(WlSyntaxVariableDeclaration *)statement.valuePtr;
@@ -360,9 +470,9 @@ WlbNode wlBindStatement(WlBinder *b, WlToken statement)
 		if (var.initializer.kind == WlKind_Missing) {
 			bvar->initializer = (WlbNode){.kind = WlBKind_None};
 		} else {
-			bvar->initializer = wlBindExpression(b, var.initializer, type);
+			bvar->initializer = wlBindExpressionOfType(b, var.initializer, type);
 		}
-		return (WlbNode){.kind = WlBKind_VariableDeclaration, .data = bvar, .type = type};
+		return (WlbNode){.kind = WlBKind_VariableDeclaration, .data = bvar, .type = type, .span = statement.span};
 	} break;
 	case WlKind_StVariableAssignement: {
 		WlAssignmentExpression var = *(WlAssignmentExpression *)statement.valuePtr;
@@ -371,9 +481,10 @@ WlbNode wlBindStatement(WlBinder *b, WlToken statement)
 		WlSymbol *variable = wlFindSymbol(b, var.variable.valueStr, WlSFlag_Variable, true);
 
 		bvar->symbol = variable;
-		bvar->expression = wlBindExpression(b, var.expression, variable->type);
+		bvar->expression = wlBindExpressionOfType(b, var.expression, variable->type);
 
-		return (WlbNode){.kind = WlBKind_VariableAssignment, .data = bvar, .type = variable->type};
+		return (
+			WlbNode){.kind = WlBKind_VariableAssignment, .data = bvar, .type = variable->type, .span = statement.span};
 	} break;
 	default: PANIC("Unhandled statement kind %s", WlKindText[statement.kind]);
 	}
@@ -413,7 +524,10 @@ WlbNode wlBindBlock(WlBinder *b, WlSyntaxBlock body, bool createScope)
 
 	if (createScope) WlPopScope(b);
 
-	return (WlbNode){.kind = WlBKind_Block, .type = WlBType_u0, .data = blk};
+	return (WlbNode){.kind = WlBKind_Block,
+					 .type = WlBType_u0,
+					 .data = blk,
+					 .span = spanFromTokens(body.curlyOpen, body.curlyClose)};
 }
 
 WlBinder wlBinderCreate(WlToken *declarations, int declarationCount)

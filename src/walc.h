@@ -154,6 +154,35 @@ bool isCompilerReserved(char c);
 bool isSymbol(char c);
 bool isSymbolStart(char c);
 
+typedef enum
+{
+	WlBType_u0,
+	WlBType_bool,
+	WlBType_u8,
+	WlBType_i8,
+	WlBType_u16,
+	WlBType_i16,
+	WlBType_u32,
+	WlBType_i32,
+	WlBType_u64,
+	WlBType_i64,
+	WlBType_f32,
+	WlBType_f64,
+	WlBType_str,
+	WlBType_end,
+	WlBType_unknown,
+	WlBType_integerNumber,
+	WlBType_floatingNumber,
+	// infer type but always return a real type
+	WlBType_inferStrong,
+	// infer type and allow for partially unresolved types (number, floating)
+	WlBType_inferWeak,
+} WlBType;
+
+char *WlBTypeText[] = {
+	"u0", "bool", "u8", "i8", "u16", "i16", "u32", "i32", "u64", "i64", "f32", "f64", "str", "<>", "<>", "<infer>",
+};
+
 #define SPANEMPTY ((WlSpan){0})
 typedef struct WlSpan {
 	Str filename;
@@ -171,6 +200,7 @@ typedef enum
 	UnexpectedTokenInPrimaryExpressionDiagnostic,
 	VariableAlreadyExistsDiagnostic,
 	VariableNotFoundDiagnostic,
+	CannotImplicitlyConvertDiagnostic,
 } WlDiagnosticKind;
 
 typedef struct {
@@ -204,6 +234,11 @@ typedef struct {
 } WlToken;
 
 #include <diagnostics.c>
+
+#include <parser.c>
+
+#include <binder.c>
+
 #include <wasmEmitter.c>
 
 #endif // WALC_H

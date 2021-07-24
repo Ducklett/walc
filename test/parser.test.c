@@ -229,6 +229,9 @@ void test_expression_parsing()
 		{STR("2 * 4"), 2, WlKind_OpStar, 4},
 		{STR("10 / 2"), 10, WlKind_OpSlash, 2},
 		{STR("13 % 3"), 13, WlKind_OpPercent, 3},
+
+		{STR("13 == 3"), 13, WlKind_OpDoubleEquals, 3},
+		{STR("1 != 2"), 1, WlKind_OpBangEquals, 2},
 	};
 
 	test_theory("Parser parses binary expressions", BinaryExpressionTestData, binaryExpressions)

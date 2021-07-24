@@ -1,4 +1,4 @@
-#include <binder.c>
+#include <walc.h>
 #include <wasm.c>
 
 WasmType boundTypeToWasm(WlBType t)

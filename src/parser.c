@@ -434,7 +434,11 @@ WlToken wlParseParameter(WlParser *p)
 
 	WlSyntaxParameter *paramp = arenaMalloc(sizeof(WlSyntaxParameter), &p->arena);
 	*paramp = param;
-	return (WlToken){.kind = WlKind_StFunctionParameter, .valuePtr = paramp};
+	return (WlToken){
+		.kind = WlKind_StFunctionParameter,
+		.valuePtr = paramp,
+		.span = spanFromTokens(param.type, param.name),
+	};
 }
 
 List(WlToken) wlParseParameterList(WlParser *p)
@@ -475,6 +479,8 @@ WlToken wlParsePrimaryExpression(WlParser *p)
 	case WlKind_Number: return wlParserTake(p);
 	case WlKind_FloatNumber: return wlParserTake(p);
 	case WlKind_String: return wlParserTake(p);
+	case WlKind_KwTrue: return wlParserTake(p);
+	case WlKind_KwFalse: return wlParserTake(p);
 	case WlKind_Symbol: {
 		WlToken symbol = wlParserMatch(p, WlKind_Symbol);
 		if (wlParserPeek(p).kind == WlKind_TkParenOpen) {
@@ -487,7 +493,8 @@ WlToken wlParsePrimaryExpression(WlParser *p)
 			WlSyntaxCall *callp = arenaMalloc(sizeof(WlSyntaxCall), &p->arena);
 			*callp = call;
 
-			return (WlToken){.kind = WlKind_StCall, .valuePtr = callp};
+			return (
+				WlToken){.kind = WlKind_StCall, .valuePtr = callp, .span = spanFromTokens(call.name, call.parenClose)};
 		} else {
 			symbol.kind = WlKind_StRef;
 			return symbol;
@@ -506,6 +513,7 @@ int operatorPrecedence(WlKind operator)
 	case WlKind_OpStar: return 13;
 	case WlKind_OpSlash: return 13;
 	case WlKind_OpPercent: return 13;
+	case WlKind_OpDoubleEquals: return 9;
 	case WlKind_OpBangEquals: return 9;
 	default: return -1;
 	}
@@ -529,7 +537,9 @@ WlToken wlParseBinaryExpression(WlParser *p, int previousPrecedence)
 		WlBinaryExpression *exprData = arenaMalloc(sizeof(WlBinaryExpression), &p->arena);
 		*exprData = (WlBinaryExpression){.left = left, .operator= operator, .right = right };
 
-		WlToken binaryExpression = {.kind = WlKind_StBinaryExpression, .valuePtr = exprData};
+		WlToken binaryExpression = {.kind = WlKind_StBinaryExpression,
+									.valuePtr = exprData,
+									.span = spanFromTokens(left, right)};
 		left = binaryExpression;
 	}
 
@@ -556,7 +566,9 @@ WlToken wlParseStatement(WlParser *p)
 		WlReturnStatement *stp = arenaMalloc(sizeof(WlReturnStatement), &p->arena);
 		*stp = st;
 
-		return (WlToken){.kind = WlKind_StReturnStatement, .valuePtr = stp};
+		return (WlToken){.kind = WlKind_StReturnStatement,
+						 .valuePtr = stp,
+						 .span = spanFromTokens(st.returnKeyword, st.semicolon)};
 	} break;
 	case WlKind_Symbol: {
 		switch (wlParserLookahead(p, 1).kind) {
@@ -569,7 +581,9 @@ WlToken wlParseStatement(WlParser *p)
 
 			WlAssignmentExpression *varp = arenaMalloc(sizeof(WlAssignmentExpression), &p->arena);
 			*varp = var;
-			return (WlToken){.kind = WlKind_StVariableAssignement, .valuePtr = varp};
+			return (WlToken){.kind = WlKind_StVariableAssignement,
+							 .valuePtr = varp,
+							 .span = spanFromTokens(var.variable, var.semicolon)};
 		}
 		case WlKind_Symbol: {
 			WlSyntaxVariableDeclaration var = {0};
@@ -587,7 +601,9 @@ WlToken wlParseStatement(WlParser *p)
 
 			WlSyntaxVariableDeclaration *varp = arenaMalloc(sizeof(WlSyntaxVariableDeclaration), &p->arena);
 			*varp = var;
-			return (WlToken){.kind = WlKind_StVariableDeclaration, .valuePtr = varp};
+			return (WlToken){.kind = WlKind_StVariableDeclaration,
+							 .valuePtr = varp,
+							 .span = spanFromTokens(var.type, var.semicolon)};
 		} break;
 		default: goto defaultExpression; break;
 		}
@@ -605,14 +621,18 @@ WlToken wlParseStatement(WlParser *p)
 			st.semicolon = (WlToken){.kind = WlKind_Missing};
 			WlReturnStatement *stp = arenaMalloc(sizeof(WlReturnStatement), &p->arena);
 			*stp = st;
-			return (WlToken){.kind = WlKind_StReturnStatement, .valuePtr = stp};
+			return (WlToken){.kind = WlKind_StReturnStatement,
+							 .valuePtr = stp,
+							 .span = spanFromTokens(st.expression, st.semicolon)};
 		} else {
 			WlExpressionStatement st = {0};
 			st.expression = expression;
 			st.semicolon = wlParserMatch(p, WlKind_TkSemicolon);
 			WlExpressionStatement *stp = arenaMalloc(sizeof(WlExpressionStatement), &p->arena);
 			*stp = st;
-			return (WlToken){.kind = WlKind_StExpressionStatement, .valuePtr = stp};
+			return (WlToken){.kind = WlKind_StExpressionStatement,
+							 .valuePtr = stp,
+							 .span = spanFromTokens(st.expression, st.semicolon)};
 		}
 	} break;
 	}
@@ -654,7 +674,7 @@ WlToken wlParseImport(WlParser *p)
 	WlSyntaxImport *imp = arenaMalloc(sizeof(WlSyntaxImport), &p->arena);
 	*imp = im;
 
-	WlToken tk = {.kind = WlKind_StImport, .valuePtr = imp};
+	WlToken tk = {.kind = WlKind_StImport, .valuePtr = imp, .span = spanFromTokens(im.import, im.semicolon)};
 	wlParserAddTopLevelStatement(p, tk);
 	return tk;
 }
@@ -665,13 +685,17 @@ WlToken wlParseFunction(WlParser *p)
 
 	WlSyntaxFunction fn = {0};
 
+	WlToken first = {.kind = WlKind_Missing};
+
 	if (wlParserPeek(p).kind == WlKind_KwExport) {
 		fn.export = wlParserMatch(p, WlKind_KwExport);
+		first = fn.export;
 	} else {
 		fn.export = (WlToken){.kind = WlKind_Missing};
 	}
 
 	fn.type = wlParserMatch(p, WlKind_Symbol);
+	if (first.kind == WlKind_Missing) first = fn.type;
 
 	// infer type as u0
 	if (wlParserPeek(p).kind == WlKind_TkParenOpen) {
@@ -689,7 +713,9 @@ WlToken wlParseFunction(WlParser *p)
 	*fnp = fn;
 
 	bool hasError = errorCount != listLen(p->diagnostics);
-	WlToken tk = (WlToken){.kind = hasError ? WlKind_Bad : WlKind_StFunction, .valuePtr = fnp};
+	WlToken tk = (WlToken){.kind = hasError ? WlKind_Bad : WlKind_StFunction,
+						   .valuePtr = fnp,
+						   .span = spanFromTokens(first, fn.body.curlyClose)};
 
 	wlParserAddTopLevelStatement(p, tk);
 	return tk;
