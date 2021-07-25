@@ -41,8 +41,19 @@ typedef enum
 	WlBOperator_Divide,
 	WlBOperator_Multiply,
 	WlBOperator_Modulo,
+	WlBOperator_ShiftLeft,
+	WlBOperator_ShiftRight,
+	WlBOperator_Greater,
+	WlBOperator_GreaterOrEqual,
+	WlBOperator_Less,
+	WlBOperator_LessOrEqual,
 	WlBOperator_Equal,
 	WlBOperator_NotEqual,
+	WlBOperator_BitwiseAnd,
+	WlBOperator_Xor,
+	WlBOperator_BitwiseOr,
+	WlBOperator_And,
+	WlBOperator_Or,
 } WlBOperator;
 
 typedef enum
@@ -222,8 +233,19 @@ WlBOperator wlBindOperator(WlToken op)
 	case WlKind_OpStar: return WlBOperator_Multiply;
 	case WlKind_OpSlash: return WlBOperator_Divide;
 	case WlKind_OpPercent: return WlBOperator_Modulo;
-	case WlKind_OpDoubleEquals: return WlBOperator_Equal;
+	case WlKind_OpLessLess: return WlBOperator_ShiftLeft;
+	case WlKind_OpGreaterGreater: return WlBOperator_ShiftRight;
+	case WlKind_OpGreater: return WlBOperator_Greater;
+	case WlKind_OpGreaterEquals: return WlBOperator_GreaterOrEqual;
+	case WlKind_OpLess: return WlBOperator_Less;
+	case WlKind_OpLessEquals: return WlBOperator_LessOrEqual;
+	case WlKind_OpEuqualsEquals: return WlBOperator_Equal;
 	case WlKind_OpBangEquals: return WlBOperator_NotEqual;
+	case WlKind_OpAmpersand: return WlBOperator_BitwiseAnd;
+	case WlKind_OpCaret: return WlBOperator_Xor;
+	case WlKind_OpPipe: return WlBOperator_BitwiseOr;
+	case WlKind_OpAmpersandAmpersand: return WlBOperator_And;
+	case WlKind_OpPipePipe: return WlBOperator_Or;
 	default: PANIC("Unhandled operator kind %s", WlKindText[op.kind]);
 	}
 }
@@ -319,7 +341,11 @@ WlbNode wlBindExpression(WlBinder *b, WlToken expression)
 
 		bex.left = wlBindExpression(b, ex.left);
 		bex.operator= wlBindOperator(ex.operator);
-		bex.right = wlBindExpression(b, ex.right);
+		if (wlIsConcreteType(bex.left.type)) {
+			bex.right = wlBindExpressionOfType(b, ex.right, bex.left.type);
+		} else {
+			bex.right = wlBindExpression(b, ex.right);
+		}
 
 		if (bex.left.type != bex.right.type) {
 			if (bex.left.type == WlBType_integerNumber && bex.right.type == WlBType_floatingNumber) {

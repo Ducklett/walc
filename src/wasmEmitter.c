@@ -71,6 +71,119 @@ void emitOperator(WlBType type, WlBOperator op, DynamicBuf *opcodes)
 		case WlBType_f64: TODO("Support modulo on float64"); break;
 		}
 		break;
+
+	case WlBOperator_ShiftLeft:
+		switch (type) {
+		case WlBType_i32: wasmPushOpi32Shl(opcodes); break;
+		case WlBType_u32: wasmPushOpi32Shl(opcodes); break;
+		case WlBType_i64: wasmPushOpi64Shl(opcodes); break;
+		case WlBType_u64: wasmPushOpi64Shl(opcodes); break;
+		case WlBType_f32: TODO("Support shift left on float32"); break;
+		case WlBType_f64: TODO("Support shift left on float64"); break;
+		}
+		break;
+	case WlBOperator_ShiftRight:
+		switch (type) {
+		case WlBType_i32: wasmPushOpi32ShrS(opcodes); break;
+		case WlBType_u32: wasmPushOpi32ShrU(opcodes); break;
+		case WlBType_i64: wasmPushOpi64ShrS(opcodes); break;
+		case WlBType_u64: wasmPushOpi64ShrU(opcodes); break;
+		case WlBType_f32: TODO("Support shift right on float32"); break;
+		case WlBType_f64: TODO("Support shift right on float64"); break;
+		}
+		break;
+	case WlBOperator_Greater:
+		switch (type) {
+		case WlBType_i32: wasmPushOpi32GtS(opcodes); break;
+		case WlBType_u32: wasmPushOpi32GtU(opcodes); break;
+		case WlBType_i64: wasmPushOpi64GtS(opcodes); break;
+		case WlBType_u64: wasmPushOpi64GtU(opcodes); break;
+		case WlBType_f32: wasmPushOpf32Gt(opcodes); break;
+		case WlBType_f64: wasmPushOpf64Gt(opcodes); break;
+		}
+		break;
+	case WlBOperator_GreaterOrEqual:
+		switch (type) {
+		case WlBType_i32: wasmPushOpi32GeS(opcodes); break;
+		case WlBType_u32: wasmPushOpi32GeU(opcodes); break;
+		case WlBType_i64: wasmPushOpi64GeS(opcodes); break;
+		case WlBType_u64: wasmPushOpi64GeU(opcodes); break;
+		case WlBType_f32: wasmPushOpf32Ge(opcodes); break;
+		case WlBType_f64: wasmPushOpf64Ge(opcodes); break;
+		}
+		break;
+	case WlBOperator_Less:
+		switch (type) {
+		case WlBType_i32: wasmPushOpi32LtS(opcodes); break;
+		case WlBType_u32: wasmPushOpi32LtU(opcodes); break;
+		case WlBType_i64: wasmPushOpi64LtS(opcodes); break;
+		case WlBType_u64: wasmPushOpi64LtU(opcodes); break;
+		case WlBType_f32: wasmPushOpf32Lt(opcodes); break;
+		case WlBType_f64: wasmPushOpf64Lt(opcodes); break;
+		}
+		break;
+	case WlBOperator_LessOrEqual:
+		switch (type) {
+		case WlBType_i32: wasmPushOpi32LeS(opcodes); break;
+		case WlBType_u32: wasmPushOpi32LeU(opcodes); break;
+		case WlBType_i64: wasmPushOpi64LeS(opcodes); break;
+		case WlBType_u64: wasmPushOpi64LeU(opcodes); break;
+		case WlBType_f32: wasmPushOpf32Le(opcodes); break;
+		case WlBType_f64: wasmPushOpf64Le(opcodes); break;
+		}
+		break;
+	case WlBOperator_Equal:
+		switch (type) {
+		case WlBType_i32: wasmPushOpi32Eq(opcodes); break;
+		case WlBType_u32: wasmPushOpi32Eq(opcodes); break;
+		case WlBType_i64: wasmPushOpi64Eq(opcodes); break;
+		case WlBType_u64: wasmPushOpi64Eq(opcodes); break;
+		case WlBType_f32: wasmPushOpf32Eq(opcodes); break;
+		case WlBType_f64: wasmPushOpf64Eq(opcodes); break;
+		}
+		break;
+	case WlBOperator_NotEqual:
+		switch (type) {
+		case WlBType_i32: wasmPushOpi32Ne(opcodes); break;
+		case WlBType_u32: wasmPushOpi32Ne(opcodes); break;
+		case WlBType_i64: wasmPushOpi64Ne(opcodes); break;
+		case WlBType_u64: wasmPushOpi64Ne(opcodes); break;
+		case WlBType_f32: wasmPushOpf32Ne(opcodes); break;
+		case WlBType_f64: wasmPushOpf64Ne(opcodes); break;
+		}
+		break;
+	case WlBOperator_And:
+	case WlBOperator_BitwiseAnd:
+		switch (type) {
+		case WlBType_i32: wasmPushOpi32And(opcodes); break;
+		case WlBType_u32: wasmPushOpi32And(opcodes); break;
+		case WlBType_i64: wasmPushOpi64And(opcodes); break;
+		case WlBType_u64: wasmPushOpi64And(opcodes); break;
+		case WlBType_f32: TODO("Support and on float32"); break;
+		case WlBType_f64: TODO("Support and on float64"); break;
+		}
+		break;
+	case WlBOperator_Xor:
+		switch (type) {
+		case WlBType_i32: wasmPushOpi32Xor(opcodes); break;
+		case WlBType_u32: wasmPushOpi32Xor(opcodes); break;
+		case WlBType_i64: wasmPushOpi64Xor(opcodes); break;
+		case WlBType_u64: wasmPushOpi64Xor(opcodes); break;
+		case WlBType_f32: TODO("Support xor on float32"); break;
+		case WlBType_f64: TODO("Support xor on float64"); break;
+		}
+		break;
+	case WlBOperator_Or:
+	case WlBOperator_BitwiseOr:
+		switch (type) {
+		case WlBType_i32: wasmPushOpi32Or(opcodes); break;
+		case WlBType_u32: wasmPushOpi32Or(opcodes); break;
+		case WlBType_i64: wasmPushOpi64Or(opcodes); break;
+		case WlBType_u64: wasmPushOpi64Or(opcodes); break;
+		case WlBType_f32: TODO("Support or on float32"); break;
+		case WlBType_f64: TODO("Support or on float64"); break;
+		}
+		break;
 	default: PANIC("Unhandled operator %d", op); break;
 	}
 }

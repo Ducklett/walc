@@ -14,13 +14,26 @@ typedef enum WlKind
 	WlKind_String,
 
 	WlKind_BinaryOperators_start,
+
 	WlKind_OpPlus,
 	WlKind_OpMinus,
 	WlKind_OpStar,
 	WlKind_OpSlash,
 	WlKind_OpPercent,
-	WlKind_OpDoubleEquals,
+	WlKind_OpLessLess,
+	WlKind_OpGreaterGreater,
+	WlKind_OpGreater,
+	WlKind_OpGreaterEquals,
+	WlKind_OpLess,
+	WlKind_OpLessEquals,
+	WlKind_OpEuqualsEquals,
 	WlKind_OpBangEquals,
+	WlKind_OpAmpersand,
+	WlKind_OpCaret,
+	WlKind_OpPipe,
+	WlKind_OpAmpersandAmpersand,
+	WlKind_OpPipePipe,
+
 	WlKind_BinaryOperators_End,
 
 	WlKind_OpEquals,
@@ -88,8 +101,19 @@ char *WlKindText[] = {
 	"*",
 	"/",
 	"%",
+	"<<",
+	">>",
+	">",
+	">=",
+	"<",
+	"<=",
 	"==",
 	"!=",
+	"&",
+	"^",
+	"|",
+	"&&",
+	"||",
 	"<binary end>",
 	"=",
 	"(",
@@ -141,9 +165,6 @@ char *WlKindText[] = {
 	"<syntax end>",
 };
 
-bool isNewline(char c);
-bool isEndOfLine(char c);
-bool isWhitespace(char c);
 bool isDigit(char c);
 bool isBinaryDigit(char c);
 bool isHexDigit(char c);

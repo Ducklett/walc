@@ -8,6 +8,7 @@
 #include <leb128.test.c>
 #include <parser.test.c>
 #include <sti.test.c>
+#include <walc.test.c>
 #include <wasm.test.c>
 
 void test_main()
@@ -17,4 +18,5 @@ void test_main()
 	test_wasm();
 	test_parser();
 	test_binder();
+	test_walc();
 }

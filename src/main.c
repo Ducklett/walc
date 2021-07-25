@@ -2,7 +2,7 @@
 
 int main(int argc, char **argv)
 {
-	Str filename = STR("examples/04_variables.wl");
+	Str filename = STR("examples/01_helloworld.wl");
 	Str source;
 
 	fileReadAllText(filename.buf, &source) || PANIC("Failed to open file");

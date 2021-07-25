@@ -7,9 +7,6 @@ typedef struct {
 	List(WlDiagnostic) diagnostics;
 } WlLexer;
 
-bool isNewline(char c) { return c == '\r' || c == '\n'; }
-bool isEndOfLine(char c) { return c == '\0' || c == '\r' || c == '\n'; }
-bool isWhitespace(char c) { return c == ' ' || c == '\t' || c == '\r' || c == '\n'; }
 bool isDigit(char c) { return c >= '0' && c <= '9'; }
 bool isBinaryDigit(char c) { return c == '0' || c == '1'; }
 bool isHexDigit(char c) { return isDigit(c) || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f'); }
@@ -106,16 +103,15 @@ lexStart:
 
 	switch (current) {
 	case '+': return wlLexerBasic(l, 1, WlKind_OpPlus);
-	case '-': return wlLexerBasic(l, 1, WlKind_OpMinus); break;
-	case '*': return wlLexerBasic(l, 1, WlKind_OpStar); break;
-	case '%': return wlLexerBasic(l, 1, WlKind_OpPercent); break;
-	case '/': return wlLexerBasic(l, 1, WlKind_OpSlash); break;
+	case '-': return wlLexerBasic(l, 1, WlKind_OpMinus);
+	case '*': return wlLexerBasic(l, 1, WlKind_OpStar);
+	case '%': return wlLexerBasic(l, 1, WlKind_OpPercent);
+	case '/': return wlLexerBasic(l, 1, WlKind_OpSlash);
 	case '=':
 		if (wlLexerLookahead(l, 1) == '=')
-			return wlLexerBasic(l, 2, WlKind_OpDoubleEquals);
+			return wlLexerBasic(l, 2, WlKind_OpEuqualsEquals);
 		else
 			return wlLexerBasic(l, 1, WlKind_OpEquals);
-		break;
 	case '!':
 		if (wlLexerLookahead(l, 1) == '=') {
 			return wlLexerBasic(l, 2, WlKind_OpBangEquals);
@@ -123,14 +119,37 @@ lexStart:
 			goto unmatched;
 		}
 		break;
-	case '(': return wlLexerBasic(l, 1, WlKind_TkParenOpen); break;
-	case ')': return wlLexerBasic(l, 1, WlKind_TkParenClose); break;
-	case '{': return wlLexerBasic(l, 1, WlKind_TkCurlyOpen); break;
-	case '}': return wlLexerBasic(l, 1, WlKind_TkCurlyClose); break;
-	case '[': return wlLexerBasic(l, 1, WlKind_TkBracketOpen); break;
-	case ']': return wlLexerBasic(l, 1, WlKind_TkBracketClose); break;
-	case ',': return wlLexerBasic(l, 1, WlKind_TkComma); break;
-	case ';': return wlLexerBasic(l, 1, WlKind_TkSemicolon); break;
+	case '<':
+		if (wlLexerLookahead(l, 1) == '<')
+			return wlLexerBasic(l, 2, WlKind_OpLessLess);
+		else if (wlLexerLookahead(l, 1) == '=')
+			return wlLexerBasic(l, 2, WlKind_OpLessEquals);
+		else
+			return wlLexerBasic(l, 1, WlKind_OpLess);
+	case '>':
+		if (wlLexerLookahead(l, 1) == '>')
+			return wlLexerBasic(l, 2, WlKind_OpGreaterGreater);
+		else if (wlLexerLookahead(l, 1) == '=')
+			return wlLexerBasic(l, 2, WlKind_OpGreaterEquals);
+		else
+			return wlLexerBasic(l, 1, WlKind_OpGreater);
+	case '&':
+		return (wlLexerLookahead(l, 1) == '&') //
+				   ? wlLexerBasic(l, 2, WlKind_OpAmpersandAmpersand)
+				   : wlLexerBasic(l, 1, WlKind_OpAmpersand);
+	case '|':
+		return (wlLexerLookahead(l, 1) == '|') //
+				   ? wlLexerBasic(l, 2, WlKind_OpPipePipe)
+				   : wlLexerBasic(l, 1, WlKind_OpPipe);
+	case '^': return wlLexerBasic(l, 1, WlKind_OpCaret);
+	case '(': return wlLexerBasic(l, 1, WlKind_TkParenOpen);
+	case ')': return wlLexerBasic(l, 1, WlKind_TkParenClose);
+	case '{': return wlLexerBasic(l, 1, WlKind_TkCurlyOpen);
+	case '}': return wlLexerBasic(l, 1, WlKind_TkCurlyClose);
+	case '[': return wlLexerBasic(l, 1, WlKind_TkBracketOpen);
+	case ']': return wlLexerBasic(l, 1, WlKind_TkBracketClose);
+	case ',': return wlLexerBasic(l, 1, WlKind_TkComma);
+	case ';': return wlLexerBasic(l, 1, WlKind_TkSemicolon);
 	case '"': {
 		l->index++;
 		int start = l->index;
@@ -513,8 +532,19 @@ int operatorPrecedence(WlKind operator)
 	case WlKind_OpStar: return 13;
 	case WlKind_OpSlash: return 13;
 	case WlKind_OpPercent: return 13;
-	case WlKind_OpDoubleEquals: return 9;
+	case WlKind_OpLessLess: return 11;
+	case WlKind_OpGreaterGreater: return 11;
+	case WlKind_OpGreater: return 10;
+	case WlKind_OpGreaterEquals: return 10;
+	case WlKind_OpLess: return 10;
+	case WlKind_OpLessEquals: return 10;
+	case WlKind_OpEuqualsEquals: return 9;
 	case WlKind_OpBangEquals: return 9;
+	case WlKind_OpAmpersand: return 8;
+	case WlKind_OpCaret: return 7;
+	case WlKind_OpPipe: return 6;
+	case WlKind_OpAmpersandAmpersand: return 5;
+	case WlKind_OpPipePipe: return 4;
 	default: return -1;
 	}
 }

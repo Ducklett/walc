@@ -13,12 +13,29 @@ void test_token_lexing()
 	{
 
 		char *operators[] = {
-			"+", "-", "*", "/", "=", "==", "!=",
+			"+", "-", "*", "/", "%", "<<", ">>", ">", ">=", "<", "<=", "==", "!=", "&", "^", "|", "&&", "||", "=",
 		};
 
 		WlKind expectedKind[] = {
-			WlKind_OpPlus,	 WlKind_OpMinus,		WlKind_OpStar,		 WlKind_OpSlash,
-			WlKind_OpEquals, WlKind_OpDoubleEquals, WlKind_OpBangEquals,
+			WlKind_OpPlus,
+			WlKind_OpMinus,
+			WlKind_OpStar,
+			WlKind_OpSlash,
+			WlKind_OpPercent,
+			WlKind_OpLessLess,
+			WlKind_OpGreaterGreater,
+			WlKind_OpGreater,
+			WlKind_OpGreaterEquals,
+			WlKind_OpLess,
+			WlKind_OpLessEquals,
+			WlKind_OpEuqualsEquals,
+			WlKind_OpBangEquals,
+			WlKind_OpAmpersand,
+			WlKind_OpCaret,
+			WlKind_OpPipe,
+			WlKind_OpAmpersandAmpersand,
+			WlKind_OpPipePipe,
+			WlKind_OpEquals,
 		};
 
 		test_theory("lexer lexes individual operators", char *, operators)
@@ -41,8 +58,8 @@ void test_token_lexing()
 		Str operators = STR("+ - * / = == !=");
 
 		WlKind expected[] = {
-			WlKind_OpPlus,	 WlKind_OpMinus,		WlKind_OpStar,		 WlKind_OpSlash,
-			WlKind_OpEquals, WlKind_OpDoubleEquals, WlKind_OpBangEquals,
+			WlKind_OpPlus,	 WlKind_OpMinus,		 WlKind_OpStar,		  WlKind_OpSlash,
+			WlKind_OpEquals, WlKind_OpEuqualsEquals, WlKind_OpBangEquals,
 		};
 
 		int tokenCount = sizeof(expected) / sizeof(WlKind);
@@ -230,7 +247,7 @@ void test_expression_parsing()
 		{STR("10 / 2"), 10, WlKind_OpSlash, 2},
 		{STR("13 % 3"), 13, WlKind_OpPercent, 3},
 
-		{STR("13 == 3"), 13, WlKind_OpDoubleEquals, 3},
+		{STR("13 == 3"), 13, WlKind_OpEuqualsEquals, 3},
 		{STR("1 != 2"), 1, WlKind_OpBangEquals, 2},
 	};
 

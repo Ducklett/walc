@@ -121,6 +121,10 @@ void *smalloc(size_t size)
 	return data;
 }
 
+bool isNewline(char c) { return c == '\r' || c == '\n'; }
+bool isEndOfLine(char c) { return c == '\0' || c == '\r' || c == '\n'; }
+bool isWhitespace(char c) { return c == ' ' || c == '\t' || c == '\r' || c == '\n'; }
+
 // A string encdoded as a character buffer and a length
 // The str may or may not be null terminated depending on how it was created
 // The null terminator is not included in the string lenght
@@ -163,6 +167,16 @@ Str strSlice(Str a, int from, int len)
 	len += (from - clampedFrom);
 	int clampedLen = min(a.len - clampedFrom, len);
 	return (Str){a.buf + clampedFrom, clampedLen};
+}
+
+Str strTrimEnd(Str s)
+{
+	int i = s.len;
+	while (i > 0 && isWhitespace(s.buf[i - 1]))
+		--i;
+
+	s.len = max(i, 0);
+	return s;
 }
 
 // returns {true}  if {str} starts with {prefix}
@@ -477,6 +491,28 @@ bool fileReadAllText(const char *filename, Str *data)
 	data->len = len;
 	fclose(fp);
 	return true;
+}
+
+// runs terminal command
+int commandReadAllText(const char *command, Str *data)
+{
+	*data = STREMPTY;
+	FILE *fp;
+	String buf = stringCreate();
+	char temp[1035];
+
+	fp = popen(command, "r");
+	if (fp == NULL) {
+		printf("Failed to run command\n");
+		return 1;
+	}
+
+	while (fgets(temp, sizeof(temp), fp) != NULL) {
+		stringAppend(&buf, strTrimEnd(strFromCstr(temp)));
+	}
+	*data = stringToStr(buf);
+
+	return pclose(fp);
 }
 
 const size_t arenaPageSize = 0xFFFF;
