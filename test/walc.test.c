@@ -43,7 +43,7 @@ void test_module_function(char *testName, char *moduleName, char *functionName, 
 
 			test_assert("File saves", fileWriteAllBytes("out.wasm", wasm));
 
-			char *command = cstrFormat("node runwasm.js %s %s", functionName, args);
+			char *command = cstrFormat("node --experimental-wasm-bigint runwasm.js %s %s", functionName, args);
 
 			Str text;
 			int exitcode = commandReadAllText(command, &text);
@@ -54,7 +54,9 @@ void test_module_function(char *testName, char *moduleName, char *functionName, 
 
 			test_assert("exits with 0 exit code", exitcode == 0);
 
-			test_assert("matches expected output", strEqual(strFromCstr(expected), text));
+			bool match = strEqual(strFromCstr(expected), text);
+			if (!match) printf("%.*s\n", STRPRINT(text));
+			test_assert("matches expected output", match);
 
 			free(command);
 			strFree(&text);
@@ -83,7 +85,15 @@ void test_walc()
 	test_module_function("dec(3) == 2", "02_expressions.wl", "dec", "3", "2");
 
 	test_module_function("foo0(3,4) == 15", "02_expressions.wl", "foo0", "3 4", "15");
-	test_module_function("foo1(3,4) == 15", "02_expressions.wl", "foo1", "3 4", "15");
+	test_module_function("foo1(3,4) == 15", "02_expressions.wl", "foo1", "3 4", "15n");
 	test_module_function("foo2(3.2,4) == 16", "02_expressions.wl", "foo2", "3.2 4", "16");
 	test_module_function("foo3(3.2,4) == 16", "02_expressions.wl", "foo3", "3.2 4", "16");
+
+	test_module_function("testFloat1() == 1.2", "02_expressions.wl", "testFloat1", "", "1.2");
+	// 32bit precision mangles some of the lower bits
+	// but are they always mangled in the same way?
+	test_module_function("testFloat3() == 1.2", "02_expressions.wl", "testFloat3", "", "1.2000000476837158");
+
+	test_section("walc functions");
+	test_module_function("Called by main is printed", "03_functions.wl", "main", "", "called by main!");
 }

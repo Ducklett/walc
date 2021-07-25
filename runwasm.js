@@ -14,7 +14,9 @@ const env = {
 
 ;(async () => {
   try {
-    const [, , func, ...args] = process.argv
+    let [, , func, ...args] = process.argv
+
+    if (!func) func = 'main'
 
     const buf = fs.readFileSync('out.wasm')
 
