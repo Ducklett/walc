@@ -45,6 +45,7 @@ typedef enum WlKind
 	WlKind_TkBracketOpen,
 	WlKind_TkBracketClose,
 	WlKind_TkComma,
+	WlKind_TkDot,
 	WlKind_TkSemicolon,
 
 	WlKind_Keywords_Start,
@@ -73,6 +74,7 @@ typedef enum WlKind
 
 	WlKind_Syntax_Start,
 	WlKind_StFunction,
+	WlKind_StNamespace,
 	WlKind_StFunctionParameter,
 	WlKind_StVariableDeclaration,
 	WlKind_StVariableAssignement,
@@ -123,6 +125,7 @@ char *WlKindText[] = {
 	"[",
 	"]",
 	",",
+	".",
 	";",
 	"<keywords start>",
 	"true",
@@ -150,6 +153,7 @@ char *WlKindText[] = {
 
 	"<syntax start>",
 	"WlKind_StFunction",
+	"WlKind_StNamespace",
 	"WlKind_StFunctionParameter",
 	"WlKind_StVariableDeclaration",
 	"WlKind_StVariableAssignement",

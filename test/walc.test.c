@@ -28,8 +28,7 @@ void test_module_function(char *testName, char *moduleName, char *functionName, 
 		WlParser p = wlParserCreate(filename, source);
 		wlParse(&p);
 
-		int topLevelCount = listLen(p.topLevelDeclarations);
-		WlBinder b = wlBind(p.topLevelDeclarations, topLevelCount);
+		WlBinder b = wlBind(p.topLevelDeclarations);
 
 		bool hasDiagnostics = listLen(p.diagnostics) || listLen(p.lexer.diagnostics);
 
@@ -96,4 +95,7 @@ void test_walc()
 
 	test_section("walc functions");
 	test_module_function("Called by main is printed", "03_functions.wl", "main", "", "called by main!");
+
+	test_section("walc namespaces");
+	test_module_function("Hello namespaces is printed", "05_namespaces.wl", "main", "", "Hello namespaces");
 }

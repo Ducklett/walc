@@ -71,3 +71,10 @@ void diagnosticPrint(WlDiagnostic d)
 	}
 	printf("%s\n", TERMCLEAR);
 }
+
+void diagnosticPrintAll(List(WlDiagnostic) d)
+{
+	for (int i = 0; i < listLen(d); i++) {
+		diagnosticPrint(d[i]);
+	}
+}

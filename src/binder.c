@@ -74,6 +74,8 @@ typedef enum
 
 struct WlBoundFunction;
 
+struct WlScope;
+
 typedef struct {
 	int index;
 	Str name;
@@ -81,6 +83,7 @@ typedef struct {
 	WlSymbolFlags flags;
 	union {
 		struct WlBoundFunction *function;
+		struct WlScope *scope;
 	};
 } WlSymbol;
 
@@ -114,8 +117,7 @@ typedef struct {
 
 typedef struct {
 	WlScope *scope;
-	WlbNode *nodes;
-	int nodeCount;
+	List(WlbNode) nodes;
 } WlBoundBlock;
 
 typedef struct {
@@ -140,9 +142,6 @@ typedef struct {
 } WlBoundAssignment;
 
 typedef struct {
-	WlToken *unboundDeclarations;
-	int unboundCount;
-
 	List(WlBoundFunction *) functions;
 	List(WlScope *) scopes;
 	List(WlDiagnostic) diagnostics;
@@ -156,13 +155,23 @@ WlSymbol *wlPushSymbol(WlBinder *b, Str name, WlBType type, WlSymbolFlags flags)
 {
 	WlSymbol *existing = wlFindSymbol(b, name, WlSFlag_None, false);
 	if (existing) {
-		return NULL;
+		if ((flags & WlSFlag_TypeBits) == WlSFlag_Namespace) {
+			return existing;
+		} else {
+			return NULL;
+		}
 	}
 
 	List(WlSymbol *) symbols = listPeek(&b->scopes)->symbols;
 
 	WlSymbol *newSymbol = arenaMalloc(sizeof(WlSymbol), &b->arena);
-	*newSymbol = (WlSymbol){.name = name, .type = type, .flags = flags, .index = 0};
+	*newSymbol = (WlSymbol){
+		.name = name,
+		.type = type,
+		.flags = flags,
+		.index = 0,
+		.scope = NULL,
+	};
 	listPush(&symbols, newSymbol);
 	listPeek(&b->scopes)->symbols = symbols;
 
@@ -218,6 +227,49 @@ WlSymbol *wlFindSymbolInScope(WlBinder *b, WlScope *s, Str name, WlSymbolFlags f
 	return found;
 }
 
+WlSymbol *wlFindSymbolInNamespace(WlBinder *b, List(WlToken) path, WlSymbolFlags flags)
+{
+	int pathLen = listLen(path);
+
+	WlSymbol *s = NULL;
+	WlScope *scope;
+	assert(pathLen > 0);
+	for (int i = 0; i < pathLen; i += 2) {
+		bool isLast = i == pathLen - 1;
+		if (i == 0) {
+			s = wlFindSymbol(b, path[i].valueStr, isLast ? flags : WlSFlag_Namespace, true);
+			if (!isLast) {
+				assert(s != NULL);
+				assert(s->flags == WlSFlag_Namespace);
+				assert(s->scope != NULL);
+				scope = s->scope;
+			}
+		} else {
+			assert(s != NULL);
+			s = wlFindSymbolInScope(b, scope, path[i].valueStr, isLast ? flags : WlSFlag_Namespace, false);
+			if (!isLast) {
+				assert(s != NULL);
+				assert(s->flags == WlSFlag_Namespace);
+				assert(s->scope != NULL);
+				scope = s->scope;
+			}
+		}
+	}
+
+	if (s == NULL) {
+		PANIC("Failed to find symbol");
+		return NULL;
+	}
+
+	WlSymbolFlags type = flags & WlSFlag_TypeBits;
+
+	if ((flags & WlSFlag_TypeBits) != (s->flags & WlSFlag_TypeBits)) {
+		PANIC("expected symbol type %d but got %d", (flags & WlSFlag_TypeBits), (s->flags & WlSFlag_TypeBits));
+	}
+
+	return s;
+}
+
 WlSymbol *wlFindSymbol(WlBinder *b, Str name, WlSymbolFlags flags, bool recurse)
 {
 	WlScope *s = listPeek(&b->scopes);
@@ -255,6 +307,7 @@ bool wlIsIntegerType(WlBType t) { return (t >= WlBType_u8 && t <= WlBType_i64); 
 bool wlIsFloatType(WlBType t) { return (t == WlBType_f32 || t == WlBType_f64); }
 bool wlIsConcreteType(WlBType t) { return (t < WlBType_end); }
 
+WlbNode wlBindFunction(WlBinder *b, WlToken tk);
 WlbNode wlBindExpressionOfType(WlBinder *b, WlToken expression, WlBType type);
 
 WlBType resolveBinaryExpressionType(WlBType operandType, WlBOperator op)
@@ -372,15 +425,19 @@ WlbNode wlBindExpression(WlBinder *b, WlToken expression)
 		};
 	}
 	case WlKind_StCall: {
+		static int foo = 0;
+
 		WlSyntaxCall call = *(WlSyntaxCall *)expression.valuePtr;
 
 		WlBoundCallExpression bcall = {0};
-		WlSymbol *function = wlFindSymbol(b, call.name.valueStr, WlSFlag_Function, true);
+		WlSymbol *function = wlFindSymbolInNamespace(b, call.path, WlSFlag_Function);
 		List(WlbNode) args = listNew();
 		int argLen = (listLen(call.args) + 1) / 2;
 
 		int paramCount;
-		if (!function) PANIC("Failed to find function by name %.*s", STRPRINT(call.name.valueStr));
+		assert((function->flags & WlSFlag_TypeBits) == WlSFlag_Function);
+		if (!function)
+			PANIC("Failed to find function by name %.*s", STRPRINT(call.path[listLen(call.path) - 1].valueStr));
 
 		int expectedArgLen = function->function->paramCount;
 		if (argLen != expectedArgLen) PANIC("Expected %d arguments but got %d", expectedArgLen, argLen);
@@ -394,13 +451,13 @@ WlbNode wlBindExpression(WlBinder *b, WlToken expression)
 
 		WlBoundCallExpression *bcallp = arenaMalloc(sizeof(WlBoundCallExpression), &b->arena);
 		*bcallp = bcall;
-
+		foo++;
 		return (WlbNode){.kind = WlBKind_Call, .data = bcallp, .type = WlBType_u0, .span = expression.span};
 	}
 
 	case WlKind_StRef: {
-		Str name = expression.valueStr;
-		WlSymbol *variable = wlFindVariable(b, expression.span, name);
+		List(WlToken) path = expression.valuePtr;
+		WlSymbol *variable = wlFindSymbolInNamespace(b, path, WlSFlag_Variable);
 
 		return (WlbNode){.kind = WlBKind_Ref, .data = variable, .type = variable->type, .span = expression.span};
 	}
@@ -482,7 +539,8 @@ WlbNode wlBindStatement(WlBinder *b, WlToken statement)
 	} break;
 	case WlKind_StExpressionStatement: {
 		WlExpressionStatement ex = *(WlExpressionStatement *)statement.valuePtr;
-		return wlBindExpressionOfType(b, ex.expression, WlBType_u0);
+		WlbNode n = wlBindExpressionOfType(b, ex.expression, WlBType_u0);
+		return n;
 	} break;
 	case WlKind_StVariableDeclaration: {
 		WlSyntaxVariableDeclaration var = *(WlSyntaxVariableDeclaration *)statement.valuePtr;
@@ -512,14 +570,38 @@ WlbNode wlBindStatement(WlBinder *b, WlToken statement)
 		return (
 			WlbNode){.kind = WlBKind_VariableAssignment, .data = bvar, .type = variable->type, .span = statement.span};
 	} break;
+	case WlKind_StFunction: return wlBindFunction(b, statement);
 	default: PANIC("Unhandled statement kind %s", WlKindText[statement.kind]);
 	}
+}
+
+WlScope *WlCreateAndPushNamespace(WlBinder *b, Str name)
+{
+	WlSymbol *ns = wlPushSymbol(b, name, WlBType_u0, WlSFlag_Namespace);
+
+	// wlPushSymbol might return an existing namespace
+	// in this case we shouldn't create a new scope and instead
+	// just keep the existing one
+	if (ns->scope == NULL) {
+		WlScope *scope = arenaMalloc(sizeof(WlScope), &b->arena);
+		*scope = (WlScope){
+			.symbols = listNew(),
+			.parentScope = listPeek(&b->scopes),
+		};
+		ns->scope = scope;
+	}
+
+	listPush(&b->scopes, ns->scope);
+	return ns->scope;
 }
 
 WlScope *WlCreateAndPushScope(WlBinder *b)
 {
 	WlScope *scope = arenaMalloc(sizeof(WlScope), &b->arena);
-	*scope = (WlScope){.symbols = listNew(), .parentScope = listPeek(&b->scopes)};
+	*scope = (WlScope){
+		.symbols = listNew(),
+		.parentScope = listPeek(&b->scopes),
+	};
 	listPush(&b->scopes, scope);
 	return scope;
 };
@@ -540,13 +622,12 @@ WlbNode wlBindBlock(WlBinder *b, WlSyntaxBlock body, bool createScope)
 		blk->scope = listPeek(&b->scopes);
 	}
 
-	blk->nodeCount = body.statementCount;
-	size_t foo = sizeof(WlbNode) * blk->nodeCount;
-	WlbNode *nodes = arenaMalloc(foo, &b->arena);
-	for (int i = 0; i < body.statementCount; i++) {
-		nodes[i] = wlBindStatement(b, body.statements[i]);
+	blk->nodes = listNew();
+
+	for (int i = 0; i < listLen(body.statements); i++) {
+		WlbNode st = wlBindStatement(b, body.statements[i]);
+		listPush(&blk->nodes, st);
 	}
-	blk->nodes = nodes;
 
 	if (createScope) WlPopScope(b);
 
@@ -556,11 +637,9 @@ WlbNode wlBindBlock(WlBinder *b, WlSyntaxBlock body, bool createScope)
 					 .span = spanFromTokens(body.curlyOpen, body.curlyClose)};
 }
 
-WlBinder wlBinderCreate(WlToken *declarations, int declarationCount)
+WlBinder wlBinderCreate()
 {
 	WlBinder b = {
-		.unboundDeclarations = declarations,
-		.unboundCount = declarationCount,
 		.functions = listNew(),
 		.scopes = listNew(),
 		.diagnostics = listNew(),
@@ -579,22 +658,85 @@ void wlBinderFree(WlBinder *b)
 	listFree(&b->scopes);
 }
 
-WlBinder wlBind(WlToken *declarations, int declarationCount)
-{
-	WlBinder b = wlBinderCreate(declarations, declarationCount);
+void wlBindDeclarations(WlBinder *b, List(WlToken) declarations);
 
+WlbNode wlBindFunction(WlBinder *b, WlToken tk)
+{
+	WlSyntaxFunction fn = *(WlSyntaxFunction *)(tk.valuePtr);
+
+	WlBType returnType = wlBindType(fn.type);
+	b->currentReturnType = returnType;
+
+	WlSymbolFlags flags = WlSFlag_Function | WlSFlag_Constant;
+	if (fn.export.kind == WlKind_KwExport) flags |= WlSFlag_Export;
+	WlSymbol *functionSymbol = wlPushSymbol(b, fn.name.valueStr, returnType, flags);
+
+	WlScope *s = WlCreateAndPushScope(b);
+
+	int paramCount = 0;
+
+	WlBoundFunction *bf = arenaMalloc(sizeof(WlBoundFunction), &b->arena);
+
+	functionSymbol->function = bf;
+	bf->symbol = functionSymbol;
+
+	for (int i = 0; i < listLen(fn.parameterList); i += 2) {
+		paramCount++;
+		WlToken paramToken = fn.parameterList[i];
+		WlSyntaxParameter param = *(WlSyntaxParameter *)paramToken.valuePtr;
+
+		WlBType paramType = wlBindType(param.type);
+
+		wlPushSymbol(b, param.name.valueStr, paramType, WlSFlag_Variable | WlSFlag_Constant);
+	}
+
+	bf->scope = s;
+	bf->paramCount = paramCount;
+	bf->body = wlBindBlock(b, fn.body, false), listPush(&b->functions, bf);
+
+	WlPopScope(b);
+	return (WlbNode){.kind = WlBKind_Function};
+}
+
+WlBinder wlBind(List(WlToken) declarations)
+{
+	WlBinder b = wlBinderCreate();
+	wlBindDeclarations(&b, declarations);
+	return b;
+}
+
+void wlBindDeclarations(WlBinder *b, List(WlToken) declarations)
+{
+	int declarationCount = listLen(declarations);
 	for (int i = 0; i < declarationCount; i++) {
+
 		WlToken tk = declarations[i];
 		switch (tk.kind) {
+		case WlKind_StNamespace: {
+			WlSyntaxNamespace ns = *(WlSyntaxNamespace *)(tk.valuePtr);
+			Str name = ns.path[listLen(ns.path) - 1].valueStr;
+			int depth = 0;
+
+			for (int i = 0; i < listLen(ns.path); i += 2) {
+				WlCreateAndPushNamespace(b, ns.path[i].valueStr);
+				depth++;
+			}
+
+			wlBindDeclarations(b, ns.body.statements);
+
+			for (int i = 0; i < depth; i++) {
+				WlPopScope(b);
+			}
+		} break;
 		case WlKind_StImport: {
 			WlSyntaxImport im = *(WlSyntaxImport *)(tk.valuePtr);
 
-			WlBoundFunction *bf = arenaMalloc(sizeof(WlBoundFunction), &b.arena);
+			WlBoundFunction *bf = arenaMalloc(sizeof(WlBoundFunction), &b->arena);
 
 			WlSymbol *functionSymbol =
-				wlPushSymbol(&b, im.name.valueStr, WlBType_u0, WlSFlag_Function | WlSFlag_Constant | WlSFlag_Import);
+				wlPushSymbol(b, im.name.valueStr, WlBType_u0, WlSFlag_Function | WlSFlag_Constant | WlSFlag_Import);
 			bf->symbol = functionSymbol;
-			WlScope *s = WlCreateAndPushScope(&b);
+			WlScope *s = WlCreateAndPushScope(b);
 			functionSymbol->function = bf;
 			bf->scope = s;
 			int paramCount = 0;
@@ -605,53 +747,19 @@ WlBinder wlBind(WlToken *declarations, int declarationCount)
 				WlSyntaxParameter param = *(WlSyntaxParameter *)paramToken.valuePtr;
 
 				WlBType paramType = wlBindType(param.type);
-				wlPushSymbol(&b, param.name.valueStr, paramType, WlSFlag_Variable | WlSFlag_Constant);
+				wlPushSymbol(b, param.name.valueStr, paramType, WlSFlag_Variable | WlSFlag_Constant);
 			}
 
-			WlPopScope(&b);
+			WlPopScope(b);
 			bf->paramCount = paramCount;
 
-			listPush(&b.functions, bf);
+			listPush(&b->functions, bf);
 		} break;
 		case WlKind_StFunction: {
-			WlSyntaxFunction fn = *(WlSyntaxFunction *)(tk.valuePtr);
-
-			WlBType returnType = wlBindType(fn.type);
-			b.currentReturnType = returnType;
-
-			WlSymbolFlags flags = WlSFlag_Function | WlSFlag_Constant;
-			if (fn.export.kind == WlKind_KwExport) flags |= WlSFlag_Export;
-			WlSymbol *functionSymbol = wlPushSymbol(&b, fn.name.valueStr, returnType, flags);
-
-			WlScope *s = WlCreateAndPushScope(&b);
-
-			int paramCount = 0;
-
-			WlBoundFunction *bf = arenaMalloc(sizeof(WlBoundFunction), &b.arena);
-
-			functionSymbol->function = bf;
-			bf->symbol = functionSymbol;
-
-			for (int i = 0; i < listLen(fn.parameterList); i += 2) {
-				paramCount++;
-				WlToken paramToken = fn.parameterList[i];
-				WlSyntaxParameter param = *(WlSyntaxParameter *)paramToken.valuePtr;
-
-				WlBType paramType = wlBindType(param.type);
-
-				wlPushSymbol(&b, param.name.valueStr, paramType, WlSFlag_Variable | WlSFlag_Constant);
-			}
-
-			bf->scope = s;
-			bf->paramCount = paramCount;
-			bf->body = wlBindBlock(&b, fn.body, false), listPush(&b.functions, bf);
-
-			WlPopScope(&b);
+			wlBindFunction(b, tk);
 		} break;
 		case WlKind_Bad: break;
 		default: PANIC("Unhandled declaration kind %s", WlKindText[tk.kind]); break;
 		}
 	}
-
-	return b;
 }

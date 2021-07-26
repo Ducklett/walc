@@ -6,13 +6,25 @@
 
 #include <walc.h>
 
+List(WlToken) referencePathFromString(Str s)
+{
+	WlParser p = wlParserCreate(STREMPTY, s);
+	List(WlToken) tks = wlParseReferencePath(&p);
+	wlParserFree(&p);
+	if (listLen(p.diagnostics) > 0) {
+		diagnosticPrintAll(p.diagnostics);
+		PANIC("Failed to parse reference path");
+	}
+	return tks;
+}
+
 void test_binder_symbols()
 {
 	test_section("binder symbols");
 
 	test_that("Variables from outer scopes can be shadowed")
 	{
-		WlBinder b = wlBinderCreate(NULL, 0);
+		WlBinder b = wlBinderCreate(NULL);
 
 		WlSymbol *a = wlPushVariable(&b, SPANEMPTY, STR("a"), WlBType_i32);
 
@@ -33,7 +45,7 @@ void test_binder_symbols()
 
 	test_that("Variables in the same scope cannot be shadowed")
 	{
-		WlBinder b = wlBinderCreate(NULL, 0);
+		WlBinder b = wlBinderCreate(NULL);
 
 		WlSymbol *a = wlPushVariable(&b, SPANEMPTY, STR("a"), WlBType_i32);
 
@@ -51,7 +63,7 @@ void test_binder_symbols()
 
 	test_that("The root cannot access variables declared in other scopes")
 	{
-		WlBinder b = wlBinderCreate(NULL, 0);
+		WlBinder b = wlBinderCreate(NULL);
 
 		WlCreateAndPushScope(&b);
 		WlSymbol *a = wlPushVariable(&b, SPANEMPTY, STR("a"), WlBType_i32);
@@ -70,7 +82,7 @@ void test_binder_symbols()
 
 	test_that("Other scopes can access variables declared in the root")
 	{
-		WlBinder b = wlBinderCreate(NULL, 0);
+		WlBinder b = wlBinderCreate(NULL);
 
 		WlSymbol *a = wlPushVariable(&b, SPANEMPTY, STR("a"), WlBType_i32);
 		test_assert("the variable is created", a != NULL);
@@ -85,7 +97,7 @@ void test_binder_symbols()
 
 	test_that("Other scopes cannot access variables declared in a different scope")
 	{
-		WlBinder b = wlBinderCreate(NULL, 0);
+		WlBinder b = wlBinderCreate(NULL);
 
 		WlCreateAndPushScope(&b);
 		WlSymbol *a = wlPushVariable(&b, SPANEMPTY, STR("a"), WlBType_i32);
@@ -95,6 +107,67 @@ void test_binder_symbols()
 		WlCreateAndPushScope(&b);
 		WlSymbol *a2 = wlFindVariable(&b, SPANEMPTY, STR("a"));
 		test_assert("the variable not found", a2 == NULL);
+		WlPopScope(&b);
+
+		wlBinderFree(&b);
+	}
+
+	test_that("Namespaces allow access to contents of other scopes")
+	{
+		WlBinder b = wlBinderCreate(NULL);
+
+		WlCreateAndPushNamespace(&b, STR("Foo"));
+		WlSymbol *a = wlPushVariable(&b, SPANEMPTY, STR("a"), WlBType_i32);
+		test_assert("the variable is created", a != NULL);
+		WlPopScope(&b);
+
+		WlCreateAndPushScope(&b);
+		WlSymbol *a2 = wlFindSymbolInNamespace(&b, referencePathFromString(STR("Foo.a")), WlSFlag_Variable);
+
+		test_assert("the variable is found", a2 != NULL);
+		WlPopScope(&b);
+
+		wlBinderFree(&b);
+	}
+
+	test_that("Higher namespaces can directly access symbols in lower namespaces")
+	{
+		WlBinder b = wlBinderCreate(NULL);
+
+		WlCreateAndPushNamespace(&b, STR("Foo"));
+		WlSymbol *a = wlPushVariable(&b, SPANEMPTY, STR("a"), WlBType_i32);
+		test_assert("the variable is created", a != NULL);
+		WlPopScope(&b);
+
+		WlCreateAndPushNamespace(&b, STR("Foo"));
+		WlCreateAndPushNamespace(&b, STR("Bar"));
+		WlCreateAndPushNamespace(&b, STR("Baz"));
+		WlSymbol *a2 = wlFindSymbolInNamespace(&b, referencePathFromString(STR("a")), WlSFlag_Variable);
+
+		test_assert("the variable is found", a2 != NULL);
+		WlPopScope(&b);
+		WlPopScope(&b);
+		WlPopScope(&b);
+
+		wlBinderFree(&b);
+	}
+
+	test_that("Lower namespaces can access symbols in higher namespaces by providing the rest of the path")
+	{
+		WlBinder b = wlBinderCreate(NULL);
+
+		WlCreateAndPushNamespace(&b, STR("Foo"));
+		WlCreateAndPushNamespace(&b, STR("Bar"));
+		WlCreateAndPushNamespace(&b, STR("Baz"));
+		WlSymbol *a = wlPushVariable(&b, SPANEMPTY, STR("a"), WlBType_i32);
+		test_assert("the variable is created", a != NULL);
+		WlPopScope(&b);
+		WlPopScope(&b);
+		WlPopScope(&b);
+
+		WlCreateAndPushNamespace(&b, STR("Foo"));
+		WlSymbol *a2 = wlFindSymbolInNamespace(&b, referencePathFromString(STR("Bar.Baz.a")), WlSFlag_Variable);
+		test_assert("the variable is found", a2 != NULL);
 		WlPopScope(&b);
 
 		wlBinderFree(&b);
@@ -139,7 +212,7 @@ void test_binder_expression_type_resolution()
 		}
 		test_assert(cstrFormat("%s has no diagnostics", data.source), listLen(p.diagnostics) == 0);
 
-		WlBinder b = wlBinderCreate(NULL, 0);
+		WlBinder b = wlBinderCreate(NULL);
 
 		WlbNode n = wlBindExpressionOfType(&b, t, WlBType_inferStrong);
 
@@ -178,7 +251,7 @@ void test_binder_expression_type_resolution()
 		ExpressionTypeData data = explicitTypeExpressions[i];
 		WlParser p = wlParserCreate(STREMPTY, strFromCstr(data.source));
 		WlToken t = wlParseExpression(&p);
-		WlBinder b = wlBinderCreate(NULL, 0);
+		WlBinder b = wlBinderCreate(NULL);
 		WlbNode n = wlBindExpressionOfType(&b, t, data.type);
 
 		test_assert(cstrFormat("%s: Expression is of type %s", data.source, WlBTypeText[data.type]),
@@ -190,7 +263,7 @@ void test_binder_expression_type_resolution()
 	{
 		WlParser p = wlParserCreate(STREMPTY, STR("10+1.1"));
 		WlToken t = wlParseExpression(&p);
-		WlBinder b = wlBinderCreate(NULL, 0);
+		WlBinder b = wlBinderCreate(NULL);
 		WlbNode n = wlBindExpressionOfType(&b, t, WlBType_i32);
 		test_assert(cstrFormat("A diagnostic was reported"),
 					listLen(b.diagnostics) == 1 && b.diagnostics[0].kind == CannotImplicitlyConvertDiagnostic);

@@ -254,6 +254,9 @@ void emitStatement(WlbNode statement, DynamicBuf *opcodes)
 		emitExpression(var.expression, opcodes);
 		wasmPushOpLocalSet(opcodes, var.symbol->index);
 	} break;
+	case WlBKind_Function: {
+		// do nothing! These are added to the module globally
+	} break;
 	default: PANIC("Unhandled statement kind %d", statement.kind); break;
 	}
 }
@@ -274,6 +277,9 @@ Buf emitWasm(WlBinder *b)
 		varOffset = 0;
 		WlBoundFunction *fn = b->functions[i];
 
+		int index = wasmModuleReserveFunctionId(&source);
+		fn->symbol->index = index;
+
 		DynamicBuf args = dynamicBufCreate();
 		for (int i = 0; i < fn->paramCount; i++) {
 			WlSymbol *param = fn->scope->symbols[i];
@@ -293,14 +299,14 @@ Buf emitWasm(WlBinder *b)
 		if (returnType != WasmType_Void) dynamicBufPush(&rets, returnType);
 
 		if (fn->symbol->flags & WlSFlag_Import) {
-			int index = wasmModuleAddImport(&source, fn->symbol->name, dynamicBufToBuf(args), dynamicBufToBuf(rets));
-			fn->symbol->index = index;
+			wasmModuleAddImport(&source, fn->symbol->name, dynamicBufToBuf(args), dynamicBufToBuf(rets), index);
 		} else {
 
 			DynamicBuf locals = dynamicBufCreate();
 
 			for (int i = fn->paramCount; i < listLen(fn->scope->symbols); i++) {
 				WlSymbol *local = fn->scope->symbols[i];
+				if ((local->flags & WlSFlag_TypeBits) == WlSFlag_Function) continue;
 				local->index = varOffset;
 				if (local->type == WlBType_str) {
 					dynamicBufPush(&locals, WasmType_I32);
@@ -316,15 +322,14 @@ Buf emitWasm(WlBinder *b)
 
 			WlbNode bodyNode = fn->body;
 			WlBoundBlock body = *(WlBoundBlock *)bodyNode.data;
-			for (int j = 0; j < body.nodeCount; j++) {
+			for (int j = 0; j < listLen(body.nodes); j++) {
 				WlbNode statementNode = body.nodes[j];
 				emitStatement(statementNode, &opcodes);
 			}
 
-			int index = wasmModuleAddFunction(
-				&source, (fn->symbol->flags & WlSFlag_Export) ? fn->symbol->name : STREMPTY, dynamicBufToBuf(args),
-				dynamicBufToBuf(rets), dynamicBufToBuf(locals), dynamicBufToBuf(opcodes));
-			fn->symbol->index = index;
+			wasmModuleAddFunction(&source, (fn->symbol->flags & WlSFlag_Export) ? fn->symbol->name : STREMPTY,
+								  dynamicBufToBuf(args), dynamicBufToBuf(rets), dynamicBufToBuf(locals),
+								  dynamicBufToBuf(opcodes), index);
 		}
 	}
 

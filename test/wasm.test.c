@@ -61,7 +61,7 @@ void test_wasm_func()
 		Wasm module = wasmModuleCreate();
 		u8 returns[] = {WasmType_I32};
 		u8 opcodes[] = {WasmOp_I32Const, 42};
-		wasmModuleAddFunction(&module, STREMPTY, BUFEMPTY, BUF(returns), BUFEMPTY, BUF(opcodes));
+		wasmModuleAddFunction(&module, STREMPTY, BUFEMPTY, BUF(returns), BUFEMPTY, BUF(opcodes), -1);
 		test("Single function produces a single function type", listLen(module.types) == 1);
 
 		Buf bytecode = wasmModuleCompile(module);
@@ -77,8 +77,8 @@ void test_wasm_func()
 		Wasm module = wasmModuleCreate();
 		u8 returns[] = {WasmType_I32};
 		u8 opcodes[] = {WasmOp_I32Const, 42};
-		wasmModuleAddFunction(&module, STREMPTY, BUFEMPTY, BUF(returns), BUFEMPTY, BUF(opcodes));
-		wasmModuleAddFunction(&module, STREMPTY, BUFEMPTY, BUF(returns), BUFEMPTY, BUF(opcodes));
+		wasmModuleAddFunction(&module, STREMPTY, BUFEMPTY, BUF(returns), BUFEMPTY, BUF(opcodes), -1);
+		wasmModuleAddFunction(&module, STREMPTY, BUFEMPTY, BUF(returns), BUFEMPTY, BUF(opcodes), -1);
 		test("Two functions of the same type share a function type", listLen(module.types) == 1);
 
 		wasmModuleFree(&module);
@@ -89,8 +89,8 @@ void test_wasm_func()
 		u8 returns[] = {WasmType_I32};
 		u8 returns2[] = {WasmType_I64};
 		u8 opcodes[] = {WasmOp_I32Const, 42};
-		wasmModuleAddFunction(&module, STREMPTY, BUFEMPTY, BUF(returns), BUFEMPTY, BUF(opcodes));
-		wasmModuleAddFunction(&module, STREMPTY, BUFEMPTY, BUF(returns2), BUFEMPTY, BUF(opcodes));
+		wasmModuleAddFunction(&module, STREMPTY, BUFEMPTY, BUF(returns), BUFEMPTY, BUF(opcodes), -1);
+		wasmModuleAddFunction(&module, STREMPTY, BUFEMPTY, BUF(returns2), BUFEMPTY, BUF(opcodes), -1);
 		test("Two functions of different types get their own function type", listLen(module.types) == 2);
 
 		wasmModuleFree(&module);
@@ -108,7 +108,7 @@ void test_wasm_import()
 		u8 argsValues[] = {WasmType_I32, WasmType_I32};
 		Buf args = BUF(argsValues);
 		Buf rets = BUFEMPTY;
-		wasmModuleAddImport(&module, STR("print"), args, rets);
+		wasmModuleAddImport(&module, STR("print"), args, rets, -1);
 
 		test("Function count increments when adding an import", module.funcCount == 1);
 		test("Import count increments when adding an import", listLen(module.imports) == 1);

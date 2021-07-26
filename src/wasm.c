@@ -161,12 +161,14 @@ static int wasmModuleFindOrCreateFuncType(Wasm *module, Buf args, Buf rets)
 	return typeCount;
 }
 
+int wasmModuleReserveFunctionId(Wasm *module) { return module->funcCount++; }
+
 // adds a new import to the module
 // the provided buffers shouldn't be freed until you are done with the {Wasm} object
 // returns the function id
-int wasmModuleAddImport(Wasm *module, Str name, Buf args, Buf rets)
+int wasmModuleAddImport(Wasm *module, Str name, Buf args, Buf rets, int id)
 {
-	int id = module->funcCount++;
+	if (id == -1) id = module->funcCount++;
 	int typeIndex = wasmModuleFindOrCreateFuncType(module, args, rets);
 	WasmImport im = {
 		.id = id,
@@ -179,11 +181,13 @@ int wasmModuleAddImport(Wasm *module, Str name, Buf args, Buf rets)
 
 // adds a new function to the module
 // the provided buffers shouldn't be freed until you are done with the {Wasm} object
-int wasmModuleAddFunction(Wasm *module, Str name, Buf args, Buf rets, Buf locals, Buf opcodes)
+// you can pass a function id that is generated ahead of time
+// or let the functions generate one by passing -1
+int wasmModuleAddFunction(Wasm *module, Str name, Buf args, Buf rets, Buf locals, Buf opcodes, int id)
 {
 	if (name.len != 0) module->exportCount++;
 
-	int id = module->funcCount++;
+	if (id == -1) id = module->funcCount++;
 	int typeIndex = wasmModuleFindOrCreateFuncType(module, args, rets);
 	WasmFunc fun = {
 		.id = id,

@@ -2,7 +2,7 @@
 
 int main(int argc, char **argv)
 {
-	Str filename = STR("examples/02_expressions.wl");
+	Str filename = STR("examples/03_functions.wl");
 	Str source;
 
 	fileReadAllText(filename.buf, &source) || PANIC("Failed to open file");
@@ -10,8 +10,7 @@ int main(int argc, char **argv)
 	WlParser p = wlParserCreate(filename, source);
 	wlParse(&p);
 
-	int topLevelCount = listLen(p.topLevelDeclarations);
-	WlBinder b = wlBind(p.topLevelDeclarations, topLevelCount);
+	WlBinder b = wlBind(p.topLevelDeclarations);
 
 	// for (int i = 0; i < topLevelCount; i++) {
 	// 	wlPrint(p.topLevelDeclarations[i]);

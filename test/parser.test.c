@@ -469,6 +469,31 @@ void test_function_parsing()
 	}
 }
 
+void test_namespace_parsing()
+{
+	test_that("single level namespace parses")
+	{
+		WlParser p = wlParserCreate(STREMPTY, STR("namespace foo {}"));
+		WlToken t = wlParseNamespace(&p);
+
+		test_assert("is a namespace", t.kind == WlKind_StNamespace);
+		test_assert("encounters no errors", listLen(p.diagnostics) == 0);
+
+		wlParserFree(&p);
+	}
+
+	test_that("multi level namespace parses")
+	{
+		WlParser p = wlParserCreate(STREMPTY, STR("namespace foo.bar.baz {}"));
+		WlToken t = wlParseNamespace(&p);
+
+		test_assert("is a namespace", t.kind == WlKind_StNamespace);
+		test_assert("encounters no errors", listLen(p.diagnostics) == 0);
+
+		wlParserFree(&p);
+	}
+}
+
 void test_parser()
 {
 	test_section("parser");
@@ -477,4 +502,5 @@ void test_parser()
 	test_expression_parsing();
 	test_return_statement_parsing();
 	test_function_parsing();
+	test_namespace_parsing();
 }

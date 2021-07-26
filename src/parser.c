@@ -149,6 +149,7 @@ lexStart:
 	case '[': return wlLexerBasic(l, 1, WlKind_TkBracketOpen);
 	case ']': return wlLexerBasic(l, 1, WlKind_TkBracketClose);
 	case ',': return wlLexerBasic(l, 1, WlKind_TkComma);
+	case '.': return wlLexerBasic(l, 1, WlKind_TkDot);
 	case ';': return wlLexerBasic(l, 1, WlKind_TkSemicolon);
 	case '"': {
 		l->index++;
@@ -325,7 +326,7 @@ typedef struct {
 } WlAssignmentExpression;
 
 typedef struct {
-	WlToken name;
+	List(WlToken) path;
 	WlToken parenOpen;
 	List(WlToken) args;
 	WlToken parenClose;
@@ -333,8 +334,7 @@ typedef struct {
 
 typedef struct {
 	WlToken curlyOpen;
-	WlToken *statements;
-	int statementCount;
+	List(WlToken) statements;
 	WlToken curlyClose;
 } WlSyntaxBlock;
 
@@ -352,6 +352,12 @@ typedef struct {
 	WlToken parenClose;
 	WlSyntaxBlock body;
 } WlSyntaxFunction;
+
+typedef struct {
+	WlToken namespace;
+	List(WlToken) path;
+	WlSyntaxBlock body;
+} WlSyntaxNamespace;
 
 typedef struct {
 	WlToken import;
@@ -443,6 +449,7 @@ WlToken wlParserMatch_impl(WlParser *p, WlKind kind, const char *file, int line)
 
 void wlParserAddTopLevelStatement(WlParser *p, WlToken tk) { listPush(&p->topLevelDeclarations, tk); }
 
+WlToken wlParseDeclaration(WlParser *p, bool topLevel);
 WlToken wlParseExpression(WlParser *p);
 
 WlToken wlParseParameter(WlParser *p)
@@ -492,6 +499,21 @@ List(WlToken) wlParseArgumentList(WlParser *p)
 	return list;
 }
 
+List(WlToken) wlParseReferencePath(WlParser *p)
+{
+	List(WlToken) path = listNew();
+
+	while (true) {
+		WlToken segment = wlParserMatch(p, WlKind_Symbol);
+		listPush(&path, segment);
+
+		if (wlParserPeek(p).kind != WlKind_TkDot) break;
+		WlToken delim = wlParserMatch(p, WlKind_TkDot);
+		listPush(&path, delim);
+	}
+	return path;
+}
+
 WlToken wlParsePrimaryExpression(WlParser *p)
 {
 	switch (wlParserPeek(p).kind) {
@@ -501,10 +523,10 @@ WlToken wlParsePrimaryExpression(WlParser *p)
 	case WlKind_KwTrue: return wlParserTake(p);
 	case WlKind_KwFalse: return wlParserTake(p);
 	case WlKind_Symbol: {
-		WlToken symbol = wlParserMatch(p, WlKind_Symbol);
+		List(WlToken) path = wlParseReferencePath(p);
 		if (wlParserPeek(p).kind == WlKind_TkParenOpen) {
 			WlSyntaxCall call = {0};
-			call.name = symbol;
+			call.path = path;
 			call.parenOpen = wlParserMatch(p, WlKind_TkParenOpen);
 			call.args = wlParseArgumentList(p);
 			call.parenClose = wlParserMatch(p, WlKind_TkParenClose);
@@ -512,11 +534,17 @@ WlToken wlParsePrimaryExpression(WlParser *p)
 			WlSyntaxCall *callp = arenaMalloc(sizeof(WlSyntaxCall), &p->arena);
 			*callp = call;
 
-			return (
-				WlToken){.kind = WlKind_StCall, .valuePtr = callp, .span = spanFromTokens(call.name, call.parenClose)};
+			return (WlToken){
+				.kind = WlKind_StCall,
+				.valuePtr = callp,
+				.span = spanFromTokens(call.path[0], call.parenClose),
+			};
 		} else {
-			symbol.kind = WlKind_StRef;
-			return symbol;
+			return (WlToken){
+				.kind = WlKind_StRef,
+				.valuePtr = path,
+				.span = spanFromTokens(path[0], path[listLen(path) - 1]),
+			};
 		}
 	}
 	default: return parserReport(p, UnexpectedTokenInPrimaryExpressionDiagnostic, wlParserTake(p), 0);
@@ -616,6 +644,15 @@ WlToken wlParseStatement(WlParser *p)
 							 .span = spanFromTokens(var.variable, var.semicolon)};
 		}
 		case WlKind_Symbol: {
+			// local function
+			// TODO: implicit return type for local functions
+			// detecting implicit return type is kinda tricky
+			// because foo() {} looks like a call expression at first
+			// we'd need to start parsing the argument list
+			// and then swap over to parsing a parameter list if any errors occur
+			if (wlParserLookahead(p, 2).kind == WlKind_TkParenOpen) {
+				return wlParseDeclaration(p, false);
+			}
 			WlSyntaxVariableDeclaration var = {0};
 			var.export = (WlToken){.kind = WlKind_Missing};
 			var.type = wlParserMatch(p, WlKind_Symbol);
@@ -668,13 +705,25 @@ WlToken wlParseStatement(WlParser *p)
 	}
 }
 
-WlSyntaxBlock wlParseBlock(WlParser *p)
+typedef enum
+{
+	BlockParseStatements = 0,
+	BlockParseDeclarations = 1,
+} BlockParseOptions;
+
+WlSyntaxBlock wlParseBlock(WlParser *p, BlockParseOptions options)
 {
 	WlSyntaxBlock blk = {0};
 	blk.curlyOpen = wlParserMatch(p, WlKind_TkCurlyOpen);
-	blk.statements = malloc(sizeof(WlToken) * 0xFF);
+	blk.statements = listNew();
 	while (wlParserPeek(p).kind != WlKind_TkCurlyClose && wlParserPeek(p).kind != WlKind_EOF) {
-		blk.statements[blk.statementCount++] = wlParseStatement(p);
+		if (options == BlockParseStatements) {
+			WlToken tk = wlParseStatement(p);
+			listPush(&blk.statements, tk);
+		} else {
+			WlToken tk = wlParseDeclaration(p, false);
+			listPush(&blk.statements, tk);
+		}
 	}
 
 	blk.curlyClose = wlParserMatch(p, WlKind_TkCurlyClose);
@@ -705,7 +754,6 @@ WlToken wlParseImport(WlParser *p)
 	*imp = im;
 
 	WlToken tk = {.kind = WlKind_StImport, .valuePtr = imp, .span = spanFromTokens(im.import, im.semicolon)};
-	wlParserAddTopLevelStatement(p, tk);
 	return tk;
 }
 
@@ -738,7 +786,7 @@ WlToken wlParseFunction(WlParser *p)
 	fn.parenOpen = wlParserMatch(p, WlKind_TkParenOpen);
 	fn.parameterList = wlParseParameterList(p);
 	fn.parenClose = wlParserMatch(p, WlKind_TkParenClose);
-	fn.body = wlParseBlock(p);
+	fn.body = wlParseBlock(p, BlockParseStatements);
 	WlSyntaxFunction *fnp = arenaMalloc(sizeof(WlSyntaxFunction), &p->arena);
 	*fnp = fn;
 
@@ -747,22 +795,43 @@ WlToken wlParseFunction(WlParser *p)
 						   .valuePtr = fnp,
 						   .span = spanFromTokens(first, fn.body.curlyClose)};
 
-	wlParserAddTopLevelStatement(p, tk);
 	return tk;
 }
 
-WlToken wlParseDeclaration(WlParser *p)
+WlToken wlParseNamespace(WlParser *p)
 {
+	WlSyntaxNamespace ns = {0};
+
+	ns.namespace = wlParserMatch(p, WlKind_KwNamespace);
+
+	ns.path = wlParseReferencePath(p);
+	ns.body = wlParseBlock(p, BlockParseDeclarations);
+
+	WlSyntaxNamespace *nsp = arenaMalloc(sizeof(WlSyntaxNamespace), &p->arena);
+	*nsp = ns;
+
+	WlToken tk = (WlToken){.kind = WlKind_StNamespace,
+						   .valuePtr = nsp,
+						   .span = spanFromTokens(ns.namespace, ns.body.curlyClose)};
+	return tk;
+}
+
+WlToken wlParseDeclaration(WlParser *p, bool topLevel)
+{
+	WlToken tk;
 	switch (wlParserPeek(p).kind) {
-	case WlKind_KwImport: return wlParseImport(p);
-	default: return wlParseFunction(p);
+	case WlKind_KwImport: tk = wlParseImport(p); break;
+	case WlKind_KwNamespace: tk = wlParseNamespace(p); break;
+	default: tk = wlParseFunction(p); break;
 	}
+	if (topLevel) wlParserAddTopLevelStatement(p, tk);
+	return tk;
 }
 
 void wlParse(WlParser *p)
 {
 	while (wlParserPeek(p).kind != WlKind_EOF) {
-		wlParseDeclaration(p);
+		wlParseDeclaration(p, true);
 	}
 }
 
@@ -779,13 +848,20 @@ void wlPrintBlock(WlSyntaxBlock blk)
 {
 	wlPrint(blk.curlyOpen);
 	printf("\n");
-	for (int i = 0; i < blk.statementCount; i++) {
+	for (int i = 0; i < listLen(blk.statements); i++) {
 		WlToken st = blk.statements[i];
 		wlPrint(st);
 		printf("\n");
 	}
 	wlPrint(blk.curlyClose);
 	printf("\n");
+}
+
+void wlPrintReferencePath(List(WlToken) path)
+{
+	for (int i = 0; i < listLen(path); i++) {
+		wlPrint(path[i]);
+	}
 }
 
 void wlPrint(WlToken tk)
@@ -845,7 +921,7 @@ void wlPrint(WlToken tk)
 	} break;
 	case WlKind_StCall: {
 		WlSyntaxCall call = *(WlSyntaxCall *)tk.valuePtr;
-		wlPrint(call.name);
+		wlPrintReferencePath(call.path);
 		wlPrint(call.parenOpen);
 		for (int i = 0; i < listLen(call.args); i++) {
 			wlPrint(call.args[i]);
@@ -869,7 +945,8 @@ void wlPrint(WlToken tk)
 		wlPrint(var.semicolon);
 	} break;
 	case WlKind_StRef: {
-		printf("<ref>::%.*s ", STRPRINT(tk.valueStr));
+		printf("<ref>::");
+		wlPrintReferencePath(tk.valuePtr);
 	} break;
 
 	default: PANIC("Unhandled print function for %s %d", WlKindText[tk.kind], tk.kind); break;
