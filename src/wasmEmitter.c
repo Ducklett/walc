@@ -240,6 +240,10 @@ void emitStatement(WlbNode statement, DynamicBuf *opcodes)
 			emitExpression(call.args[i], opcodes);
 		}
 
+		if (call.function->index == -1) {
+			call.function->index = wasmModuleReserveFunctionId(&source);
+		}
+
 		wasmPushOpCall(opcodes, call.function->index);
 	} break;
 	case WlBKind_VariableDeclaration: {
@@ -257,6 +261,7 @@ void emitStatement(WlbNode statement, DynamicBuf *opcodes)
 	case WlBKind_Function: {
 		// do nothing! These are added to the module globally
 	} break;
+	case WlBKind_None: break;
 	default: PANIC("Unhandled statement kind %d", statement.kind); break;
 	}
 }
@@ -277,8 +282,11 @@ Buf emitWasm(WlBinder *b)
 		varOffset = 0;
 		WlBoundFunction *fn = b->functions[i];
 
-		int index = wasmModuleReserveFunctionId(&source);
-		fn->symbol->index = index;
+		int index = fn->symbol->index;
+		if (index == -1) {
+			index = wasmModuleReserveFunctionId(&source);
+			fn->symbol->index = index;
+		}
 
 		DynamicBuf args = dynamicBufCreate();
 		for (int i = 0; i < fn->paramCount; i++) {

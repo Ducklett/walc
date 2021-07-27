@@ -21,6 +21,7 @@ WlBType wlBindType(WlToken tk)
 typedef enum
 {
 	WlBKind_None,
+	WlBKind_Unresolved,
 	WlBKind_Function,
 	WlBKind_VariableDeclaration,
 	WlBKind_VariableAssignment,
@@ -88,6 +89,7 @@ typedef struct {
 } WlSymbol;
 
 typedef struct WlScope {
+	List(struct WlScope *) usedScopes;
 	List(WlSymbol *) symbols;
 	struct WlScope *parentScope;
 } WlScope;
@@ -131,6 +133,12 @@ typedef struct WlBoundFunction {
 	WlSymbol *symbol;
 } WlBoundFunction;
 
+typedef struct WlBoundUse {
+	WlScope *scope;
+	List(WlToken) path;
+	WlSymbol *symbol;
+} WlBoundUse;
+
 typedef struct WlBoundVariable {
 	WlbNode initializer;
 	WlSymbol *symbol;
@@ -143,6 +151,7 @@ typedef struct {
 
 typedef struct {
 	List(WlBoundFunction *) functions;
+	List(WlBoundUse *) uses;
 	List(WlScope *) scopes;
 	List(WlDiagnostic) diagnostics;
 	WlBType currentReturnType;
@@ -169,7 +178,7 @@ WlSymbol *wlPushSymbol(WlBinder *b, Str name, WlBType type, WlSymbolFlags flags)
 		.name = name,
 		.type = type,
 		.flags = flags,
-		.index = 0,
+		.index = -1,
 		.scope = NULL,
 	};
 	listPush(&symbols, newSymbol);
@@ -220,8 +229,15 @@ WlSymbol *wlFindSymbolInScope(WlBinder *b, WlScope *s, Str name, WlSymbolFlags f
 		}
 	}
 
-	if (!found && recurse && s->parentScope) {
-		return wlFindSymbolInScope(b, s->parentScope, name, flags, true);
+	if (!found) {
+		for (int i = 0; i < listLen(s->usedScopes); i++) {
+			found = wlFindSymbolInScope(b, s->usedScopes[i], name, flags, false);
+			if (found) return found;
+		}
+
+		if (recurse && s->parentScope) {
+			return wlFindSymbolInScope(b, s->parentScope, name, flags, true);
+		}
 	}
 
 	return found;
@@ -257,7 +273,8 @@ WlSymbol *wlFindSymbolInNamespace(WlBinder *b, List(WlToken) path, WlSymbolFlags
 	}
 
 	if (s == NULL) {
-		PANIC("Failed to find symbol");
+		Str name = path[listLen(path) - 1].valueStr;
+		PANIC("Failed to find symbol %.*s", STRPRINT(name));
 		return NULL;
 	}
 
@@ -308,6 +325,7 @@ bool wlIsFloatType(WlBType t) { return (t == WlBType_f32 || t == WlBType_f64); }
 bool wlIsConcreteType(WlBType t) { return (t < WlBType_end); }
 
 WlbNode wlBindFunction(WlBinder *b, WlToken tk);
+WlbNode wlBindUse(WlBinder *b, List(WlToken) path);
 WlbNode wlBindExpressionOfType(WlBinder *b, WlToken expression, WlBType type);
 
 WlBType resolveBinaryExpressionType(WlBType operandType, WlBOperator op)
@@ -571,6 +589,7 @@ WlbNode wlBindStatement(WlBinder *b, WlToken statement)
 			WlbNode){.kind = WlBKind_VariableAssignment, .data = bvar, .type = variable->type, .span = statement.span};
 	} break;
 	case WlKind_StFunction: return wlBindFunction(b, statement);
+	case WlKind_StUse: return wlBindUse(b, ((WlSyntaxUse *)statement.valuePtr)->path);
 	default: PANIC("Unhandled statement kind %s", WlKindText[statement.kind]);
 	}
 }
@@ -585,6 +604,7 @@ WlScope *WlCreateAndPushNamespace(WlBinder *b, Str name)
 	if (ns->scope == NULL) {
 		WlScope *scope = arenaMalloc(sizeof(WlScope), &b->arena);
 		*scope = (WlScope){
+			.usedScopes = listNew(),
 			.symbols = listNew(),
 			.parentScope = listPeek(&b->scopes),
 		};
@@ -599,6 +619,7 @@ WlScope *WlCreateAndPushScope(WlBinder *b)
 {
 	WlScope *scope = arenaMalloc(sizeof(WlScope), &b->arena);
 	*scope = (WlScope){
+		.usedScopes = listNew(),
 		.symbols = listNew(),
 		.parentScope = listPeek(&b->scopes),
 	};
@@ -641,6 +662,7 @@ WlBinder wlBinderCreate()
 {
 	WlBinder b = {
 		.functions = listNew(),
+		.uses = listNew(),
 		.scopes = listNew(),
 		.diagnostics = listNew(),
 		.arena = arenaCreate(),
@@ -665,7 +687,6 @@ WlbNode wlBindFunction(WlBinder *b, WlToken tk)
 	WlSyntaxFunction fn = *(WlSyntaxFunction *)(tk.valuePtr);
 
 	WlBType returnType = wlBindType(fn.type);
-	b->currentReturnType = returnType;
 
 	WlSymbolFlags flags = WlSFlag_Function | WlSFlag_Constant;
 	if (fn.export.kind == WlKind_KwExport) flags |= WlSFlag_Export;
@@ -692,24 +713,70 @@ WlbNode wlBindFunction(WlBinder *b, WlToken tk)
 
 	bf->scope = s;
 	bf->paramCount = paramCount;
-	bf->body = wlBindBlock(b, fn.body, false), listPush(&b->functions, bf);
+	bf->body = (WlbNode){.kind = WlBKind_Unresolved, .data = &((WlSyntaxFunction *)tk.valuePtr)->body};
+	// bf->body = wlBindBlock(b, fn.body, false);
+	listPush(&b->functions, bf);
 
 	WlPopScope(b);
 	return (WlbNode){.kind = WlBKind_Function};
 }
 
+void wlBindFunctionBody(WlBinder *b, WlBoundFunction *fn)
+{
+	assert(fn->body.kind == WlBKind_Unresolved);
+	listPush(&b->scopes, fn->scope);
+	b->currentReturnType = fn->symbol->type;
+	fn->body = wlBindBlock(b, *(WlSyntaxBlock *)(fn->body.data), false);
+	WlPopScope(b);
+}
+
+WlbNode wlBindUse(WlBinder *b, List(WlToken) path)
+{
+	WlSymbol *namespace = wlFindSymbolInNamespace(b, path, WlSFlag_Namespace);
+
+	WlScope *current = listPeek(&b->scopes);
+	assert(namespace != NULL);
+	assert(namespace->scope != NULL);
+	assert(namespace->scope != current);
+
+	listPush(&current->usedScopes, namespace->scope);
+
+	WlScope *s = WlCreateAndPushScope(b);
+
+	return (WlbNode){.kind = WlBKind_None};
+}
+
+// takes the parsed declarations and resolves references and type information
+// the process looks like this:
+// - first bind namespaces, imports, function signatures
+//    - keep track of the encountered "use" statements and the scope they were declared in
+// - bind the use statements
+// - bind the function bodies
 WlBinder wlBind(List(WlToken) declarations)
 {
 	WlBinder b = wlBinderCreate();
 	wlBindDeclarations(&b, declarations);
+
+	for (int i = 0; i < listLen(b.uses); i++) {
+		listPush(&b.scopes, b.uses[i]->scope);
+		wlBindUse(&b, b.uses[i]->path);
+		listPop(&b.scopes);
+	}
+
+	for (int i = 0; i < listLen(b.functions); i++) {
+		if (b.functions[i]->symbol->flags & WlSFlag_Import) {
+			continue;
+		}
+		wlBindFunctionBody(&b, b.functions[i]);
+	}
 	return b;
 }
 
 void wlBindDeclarations(WlBinder *b, List(WlToken) declarations)
 {
 	int declarationCount = listLen(declarations);
-	for (int i = 0; i < declarationCount; i++) {
 
+	for (int i = 0; i < declarationCount; i++) {
 		WlToken tk = declarations[i];
 		switch (tk.kind) {
 		case WlKind_StNamespace: {
@@ -757,6 +824,12 @@ void wlBindDeclarations(WlBinder *b, List(WlToken) declarations)
 		} break;
 		case WlKind_StFunction: {
 			wlBindFunction(b, tk);
+		} break;
+		case WlKind_StUse: {
+			WlBoundUse *us = arenaMalloc(sizeof(WlBoundUse), &b->arena);
+			us->path = ((WlSyntaxUse *)tk.valuePtr)->path;
+			us->scope = listPeek(&b->scopes);
+			listPush(&b->uses, us);
 		} break;
 		case WlKind_Bad: break;
 		default: PANIC("Unhandled declaration kind %s", WlKindText[tk.kind]); break;

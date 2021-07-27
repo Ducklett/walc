@@ -360,6 +360,12 @@ typedef struct {
 } WlSyntaxNamespace;
 
 typedef struct {
+	WlToken use;
+	List(WlToken) path;
+	WlToken semicolon;
+} WlSyntaxUse;
+
+typedef struct {
 	WlToken import;
 	WlToken type;
 	WlToken name;
@@ -388,6 +394,7 @@ typedef struct {
 	WlToken tokens[PARSERMAXLOOKAHEAD];
 	int tokenIndex;
 	int lookaheadCount;
+	bool sectionStart;
 } WlParser;
 
 WlParser wlParserCreate(Str filename, Str source)
@@ -451,6 +458,7 @@ void wlParserAddTopLevelStatement(WlParser *p, WlToken tk) { listPush(&p->topLev
 
 WlToken wlParseDeclaration(WlParser *p, bool topLevel);
 WlToken wlParseExpression(WlParser *p);
+WlToken wlParseUse(WlParser *p);
 
 WlToken wlParseParameter(WlParser *p)
 {
@@ -610,6 +618,7 @@ WlToken wlParseExpression(WlParser *p) { return wlParseFullBinaryExpression(p); 
 WlToken wlParseStatement(WlParser *p)
 {
 	switch (wlParserPeek(p).kind) {
+	case WlKind_KwUse: return wlParseUse(p); break;
 	case WlKind_KwReturn: {
 		WlReturnStatement st = {0};
 
@@ -716,14 +725,17 @@ WlSyntaxBlock wlParseBlock(WlParser *p, BlockParseOptions options)
 	WlSyntaxBlock blk = {0};
 	blk.curlyOpen = wlParserMatch(p, WlKind_TkCurlyOpen);
 	blk.statements = listNew();
+	p->sectionStart = true;
 	while (wlParserPeek(p).kind != WlKind_TkCurlyClose && wlParserPeek(p).kind != WlKind_EOF) {
+		WlToken tk;
 		if (options == BlockParseStatements) {
-			WlToken tk = wlParseStatement(p);
+			tk = wlParseStatement(p);
 			listPush(&blk.statements, tk);
 		} else {
-			WlToken tk = wlParseDeclaration(p, false);
+			tk = wlParseDeclaration(p, false);
 			listPush(&blk.statements, tk);
 		}
+		if (tk.kind != WlKind_StUse) p->sectionStart = false;
 	}
 
 	blk.curlyClose = wlParserMatch(p, WlKind_TkCurlyClose);
@@ -816,10 +828,38 @@ WlToken wlParseNamespace(WlParser *p)
 	return tk;
 }
 
+WlToken wlParseUse(WlParser *p)
+{
+	WlSyntaxUse us = {0};
+
+	us.use = wlParserMatch(p, WlKind_KwUse);
+
+	us.path = wlParseReferencePath(p);
+	us.semicolon = wlParserMatch(p, WlKind_TkSemicolon);
+
+	WlSyntaxUse *usp = arenaMalloc(sizeof(WlSyntaxUse), &p->arena);
+	*usp = us;
+
+	WlSpan span = spanFromTokens(us.use, us.semicolon);
+
+	if (!p->sectionStart) {
+		WlDiagnostic d = {.kind = useAfterSectionStartDiagnostic, .span = span};
+		listPush(&p->diagnostics, d);
+	}
+
+	WlToken tk = (WlToken){
+		.kind = WlKind_StUse,
+		.valuePtr = usp,
+		.span = span,
+	};
+	return tk;
+}
+
 WlToken wlParseDeclaration(WlParser *p, bool topLevel)
 {
 	WlToken tk;
 	switch (wlParserPeek(p).kind) {
+	case WlKind_KwUse: tk = wlParseUse(p); break;
 	case WlKind_KwImport: tk = wlParseImport(p); break;
 	case WlKind_KwNamespace: tk = wlParseNamespace(p); break;
 	default: tk = wlParseFunction(p); break;
@@ -830,8 +870,10 @@ WlToken wlParseDeclaration(WlParser *p, bool topLevel)
 
 void wlParse(WlParser *p)
 {
+	p->sectionStart = true;
 	while (wlParserPeek(p).kind != WlKind_EOF) {
-		wlParseDeclaration(p, true);
+		WlToken tk = wlParseDeclaration(p, true);
+		if (tk.kind != WlKind_StUse) p->sectionStart = false;
 	}
 }
 

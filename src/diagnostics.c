@@ -50,8 +50,11 @@ void diagnosticPrint(WlDiagnostic d)
 		printf("Unexpected token %s%.*s%s while parsing primary expression\n", TERMBOLDCYAN, STRPRINT(errSlice),
 			   TERMCLEAR);
 	} break;
+	case useAfterSectionStartDiagnostic: {
+		printf("Unexpected %s%.*s%s. Use statements can only appear at the start of a file or block\n", TERMBOLDCYAN,
+			   STRPRINT(errSlice), TERMCLEAR);
+	} break;
 	case VariableAlreadyExistsDiagnostic: {
-
 		printf("Redeclaration of variable %s%.*s\n", TERMBOLDCYAN, d.str1, TERMCLEAR);
 	} break;
 	case VariableNotFoundDiagnostic: {

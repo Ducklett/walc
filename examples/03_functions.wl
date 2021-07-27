@@ -1,5 +1,9 @@
 import print(str msg);
 
+export main() {
+    callme();
+}
+
 callme() {
     // functions can have local functions
     // they are only accessible from within the function
@@ -9,8 +13,4 @@ callme() {
     }
 
     callme2();
-}
-
-export main() {
-    callme();
 }
