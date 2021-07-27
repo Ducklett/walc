@@ -34,9 +34,11 @@ typedef enum WlKind
 	WlKind_OpAmpersandAmpersand,
 	WlKind_OpPipePipe,
 
+	WlKind_OpQuestion,
 	WlKind_BinaryOperators_End,
 
 	WlKind_OpEquals,
+	WlKind_OpColon,
 
 	WlKind_TkParenOpen,
 	WlKind_TkParenClose,
@@ -85,6 +87,7 @@ typedef enum WlKind
 	WlKind_StCall,
 	WlKind_StRef,
 	WlKind_StBinaryExpression,
+	WlKind_StTernaryExpression,
 	WlKind_StType,
 	WlKind_StBlock,
 	WlKind_StExpression,
@@ -118,8 +121,10 @@ char *WlKindText[] = {
 	"|",
 	"&&",
 	"||",
+	"?",
 	"<binary end>",
 	"=",
+	":",
 	"(",
 	")",
 	"{",
@@ -166,6 +171,7 @@ char *WlKindText[] = {
 	"WlKind_StCall",
 	"WlKind_StRef",
 	"WlKind_StBinaryExpression",
+	"WlKind_StTernaryExpression",
 	"WlKind_StType",
 	"WlKind_StBlock",
 	"WlKind_StExpression",

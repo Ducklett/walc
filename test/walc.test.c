@@ -87,6 +87,9 @@ void test_walc()
 	test_module_function("foo1(3,4) == 15", "02_expressions.wl", "foo1", "3 4", "15n");
 	test_module_function("foo2(3.2,4) == 16", "02_expressions.wl", "foo2", "3.2 4", "16");
 	test_module_function("foo3(3.2,4) == 16", "02_expressions.wl", "foo3", "3.2 4", "16");
+	test_module_function("isBig(9) == \"Small\"", "02_expressions.wl", "isBig", "9", "Small");
+	test_module_function("isBig(10) == \"Small\"", "02_expressions.wl", "isBig", "10", "Small");
+	test_module_function("isBig(11) == \"Big\"", "02_expressions.wl", "isBig", "11", "Big");
 
 	test_module_function("testFloat1() == 1.2", "02_expressions.wl", "testFloat1", "", "1.2");
 	// 32bit precision mangles some of the lower bits

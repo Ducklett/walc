@@ -30,6 +30,7 @@ typedef enum
 	WlBKind_Ref,
 	WlBKind_Return,
 	WlBKind_BinaryExpression,
+	WlBKind_TernaryExpression,
 	WlBKind_StringLiteral,
 	WlBKind_NumberLiteral,
 	WlBKind_BoolLiteral,
@@ -116,6 +117,12 @@ typedef struct {
 	WlBOperator operator;
 	WlbNode right;
 } WlBoundBinaryExpression;
+
+typedef struct {
+	WlbNode condition;
+	WlbNode thenExpr;
+	WlbNode elseExpr;
+} WlBoundTernaryExpression;
 
 typedef struct {
 	WlScope *scope;
@@ -336,8 +343,19 @@ WlBType resolveBinaryExpressionType(WlBType operandType, WlBOperator op)
 	case WlBOperator_Divide: return operandType;
 	case WlBOperator_Multiply: return operandType;
 	case WlBOperator_Modulo: return operandType;
+	case WlBOperator_ShiftLeft: return operandType;
+	case WlBOperator_ShiftRight: return operandType;
+	case WlBOperator_Greater: return WlBType_bool;
+	case WlBOperator_GreaterOrEqual: return WlBType_bool;
+	case WlBOperator_Less: return WlBType_bool;
+	case WlBOperator_LessOrEqual: return WlBType_bool;
 	case WlBOperator_Equal: return WlBType_bool;
 	case WlBOperator_NotEqual: return WlBType_bool;
+	case WlBOperator_BitwiseAnd: return operandType;
+	case WlBOperator_Xor: return operandType;
+	case WlBOperator_BitwiseOr: return operandType;
+	case WlBOperator_And: return WlBType_bool;
+	case WlBOperator_Or: return WlBType_bool;
 	default: PANIC("Unhandled binary expression operator %d", op); break;
 	}
 }
@@ -352,6 +370,12 @@ void propagateType(WlbNode *expr, WlBType type)
 		WlBoundBinaryExpression *bin = expr->data;
 		propagateType(&bin->left, type);
 		propagateType(&bin->right, type);
+		expr->type = type;
+	} break;
+	case WlBKind_TernaryExpression: {
+		WlBoundTernaryExpression *tr = expr->data;
+		propagateType(&tr->thenExpr, type);
+		propagateType(&tr->elseExpr, type);
 		expr->type = type;
 	} break;
 	case WlBKind_NumberLiteral: {
@@ -442,6 +466,25 @@ WlbNode wlBindExpression(WlBinder *b, WlToken expression)
 			.span = expression.span,
 		};
 	}
+	case WlKind_StTernaryExpression: {
+		WlTernaryExpression expr = *(WlTernaryExpression *)expression.valuePtr;
+
+		WlBoundTernaryExpression *btr = arenaMalloc(sizeof(WlBoundTernaryExpression), &b->arena);
+		btr->condition = wlBindExpressionOfType(b, expr.condition, WlBType_bool);
+		btr->thenExpr = wlBindExpression(b, expr.thenExpr);
+		btr->elseExpr = wlBindExpression(b, expr.elseExpr);
+
+		// TODO: handle type coersion for ternary
+		assert(btr->thenExpr.type == btr->elseExpr.type);
+
+		return (WlbNode){
+			.kind = WlBKind_TernaryExpression,
+			.data = btr,
+			.span = expression.span,
+			.type = btr->thenExpr.type,
+		};
+	} break;
+
 	case WlKind_StCall: {
 		static int foo = 0;
 
@@ -495,7 +538,6 @@ WlBType makeContreteType(WlBType t)
 
 WlbNode wlBindExpressionOfType(WlBinder *b, WlToken expression, WlBType expectedType)
 {
-	//
 	WlbNode n = wlBindExpression(b, expression);
 
 	if (n.type == expectedType) return n;

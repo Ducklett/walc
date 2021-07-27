@@ -18,6 +18,8 @@ export f64 testFloat2() { 10 / 3 }
 export f32 testFloat3() { 1.2 }
 export f32 testFloat4() { 10 / 3 }
 
+export isBig(i32 x) { x > 10 ? print("Big") : print("Small"); }
+
 export main() {
     print("expressions!");
 }

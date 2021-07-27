@@ -142,6 +142,8 @@ lexStart:
 				   ? wlLexerBasic(l, 2, WlKind_OpPipePipe)
 				   : wlLexerBasic(l, 1, WlKind_OpPipe);
 	case '^': return wlLexerBasic(l, 1, WlKind_OpCaret);
+	case '?': return wlLexerBasic(l, 1, WlKind_OpQuestion);
+	case ':': return wlLexerBasic(l, 1, WlKind_OpColon);
 	case '(': return wlLexerBasic(l, 1, WlKind_TkParenOpen);
 	case ')': return wlLexerBasic(l, 1, WlKind_TkParenClose);
 	case '{': return wlLexerBasic(l, 1, WlKind_TkCurlyOpen);
@@ -317,6 +319,14 @@ typedef struct {
 	WlToken operator;
 	WlToken right;
 } WlBinaryExpression;
+
+typedef struct {
+	WlToken condition;
+	WlToken question;
+	WlToken thenExpr;
+	WlToken colon;
+	WlToken elseExpr;
+} WlTernaryExpression;
 
 typedef struct {
 	WlToken variable;
@@ -581,8 +591,25 @@ int operatorPrecedence(WlKind operator)
 	case WlKind_OpPipe: return 6;
 	case WlKind_OpAmpersandAmpersand: return 5;
 	case WlKind_OpPipePipe: return 4;
+	case WlKind_OpQuestion: return 3;
 	default: return -1;
 	}
+}
+
+WlToken parseTernary(WlParser *p, WlToken condition)
+{
+	WlTernaryExpression tr = {0};
+	tr.condition = condition;
+	tr.question = wlParserMatch(p, WlKind_OpQuestion);
+	tr.thenExpr = wlParseExpression(p);
+	tr.colon = wlParserMatch(p, WlKind_OpColon);
+	tr.elseExpr = wlParseExpression(p);
+
+	WlTernaryExpression *exprData = arenaMalloc(sizeof(WlTernaryExpression), &p->arena);
+	*exprData = tr;
+	return (WlToken){.kind = WlKind_StTernaryExpression,
+					 .valuePtr = exprData,
+					 .span = spanFromTokens(tr.condition, tr.elseExpr)};
 }
 
 WlToken wlParseBinaryExpression(WlParser *p, int previousPrecedence)
@@ -594,6 +621,12 @@ WlToken wlParseBinaryExpression(WlParser *p, int previousPrecedence)
 
 		if (precedence <= previousPrecedence) {
 			return left;
+		}
+
+		if (operator.kind == WlKind_OpQuestion) {
+			WlToken tern = parseTernary(p, left);
+			left = tern;
+			continue;
 		}
 
 		operator= wlParserTake(p);
