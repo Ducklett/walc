@@ -26,13 +26,13 @@ void test_binder_symbols()
 	{
 		WlBinder b = wlBinderCreate(NULL);
 
-		WlSymbol *a = wlPushVariable(&b, SPANEMPTY, STR("a"), WlBType_i32);
+		WlSymbol *a = wlPushVariable(&b, SPANEMPTY, STR("a"), WlBType_i32, false);
 
 		test_assert("the first variable is created", a != NULL);
 
 		WlCreateAndPushScope(&b);
 
-		WlSymbol *a2 = wlPushVariable(&b, SPANEMPTY, STR("a"), WlBType_i32);
+		WlSymbol *a2 = wlPushVariable(&b, SPANEMPTY, STR("a"), WlBType_i32, false);
 
 		test_assert("the second variable is created", a2 != NULL);
 
@@ -47,11 +47,11 @@ void test_binder_symbols()
 	{
 		WlBinder b = wlBinderCreate(NULL);
 
-		WlSymbol *a = wlPushVariable(&b, SPANEMPTY, STR("a"), WlBType_i32);
+		WlSymbol *a = wlPushVariable(&b, SPANEMPTY, STR("a"), WlBType_i32, false);
 
 		test_assert("the first variable is created", a != NULL);
 
-		WlSymbol *a2 = wlPushVariable(&b, SPANEMPTY, STR("a"), WlBType_i32);
+		WlSymbol *a2 = wlPushVariable(&b, SPANEMPTY, STR("a"), WlBType_i32, false);
 
 		test_assert("the second variable is not created", a2 == NULL);
 
@@ -66,7 +66,7 @@ void test_binder_symbols()
 		WlBinder b = wlBinderCreate(NULL);
 
 		WlCreateAndPushScope(&b);
-		WlSymbol *a = wlPushVariable(&b, SPANEMPTY, STR("a"), WlBType_i32);
+		WlSymbol *a = wlPushVariable(&b, SPANEMPTY, STR("a"), WlBType_i32, false);
 		test_assert("the variable is created", a != NULL);
 		WlPopScope(&b);
 
@@ -84,7 +84,7 @@ void test_binder_symbols()
 	{
 		WlBinder b = wlBinderCreate(NULL);
 
-		WlSymbol *a = wlPushVariable(&b, SPANEMPTY, STR("a"), WlBType_i32);
+		WlSymbol *a = wlPushVariable(&b, SPANEMPTY, STR("a"), WlBType_i32, false);
 		test_assert("the variable is created", a != NULL);
 
 		WlCreateAndPushScope(&b);
@@ -100,7 +100,7 @@ void test_binder_symbols()
 		WlBinder b = wlBinderCreate(NULL);
 
 		WlCreateAndPushScope(&b);
-		WlSymbol *a = wlPushVariable(&b, SPANEMPTY, STR("a"), WlBType_i32);
+		WlSymbol *a = wlPushVariable(&b, SPANEMPTY, STR("a"), WlBType_i32, false);
 		test_assert("the variable is created", a != NULL);
 		WlPopScope(&b);
 
@@ -117,7 +117,7 @@ void test_binder_symbols()
 		WlBinder b = wlBinderCreate(NULL);
 
 		WlCreateAndPushNamespace(&b, STR("Foo"));
-		WlSymbol *a = wlPushVariable(&b, SPANEMPTY, STR("a"), WlBType_i32);
+		WlSymbol *a = wlPushVariable(&b, SPANEMPTY, STR("a"), WlBType_i32, false);
 		test_assert("the variable is created", a != NULL);
 		WlPopScope(&b);
 
@@ -135,7 +135,7 @@ void test_binder_symbols()
 		WlBinder b = wlBinderCreate(NULL);
 
 		WlCreateAndPushNamespace(&b, STR("Foo"));
-		WlSymbol *a = wlPushVariable(&b, SPANEMPTY, STR("a"), WlBType_i32);
+		WlSymbol *a = wlPushVariable(&b, SPANEMPTY, STR("a"), WlBType_i32,false);
 		test_assert("the variable is created", a != NULL);
 		WlPopScope(&b);
 
@@ -159,7 +159,7 @@ void test_binder_symbols()
 		WlCreateAndPushNamespace(&b, STR("Foo"));
 		WlCreateAndPushNamespace(&b, STR("Bar"));
 		WlCreateAndPushNamespace(&b, STR("Baz"));
-		WlSymbol *a = wlPushVariable(&b, SPANEMPTY, STR("a"), WlBType_i32);
+		WlSymbol *a = wlPushVariable(&b, SPANEMPTY, STR("a"), WlBType_i32,false);
 		test_assert("the variable is created", a != NULL);
 		WlPopScope(&b);
 		WlPopScope(&b);

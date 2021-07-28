@@ -30,13 +30,15 @@ void test_module_function(char *testName, char *moduleName, char *functionName, 
 
 		WlBinder b = wlBind(p.topLevelDeclarations);
 
-		bool hasDiagnostics = listLen(p.diagnostics) || listLen(p.lexer.diagnostics);
+		bool hasDiagnostics = listLen(p.diagnostics) || listLen(p.lexer.diagnostics) || listLen(b.diagnostics);
 
 		if (hasDiagnostics) {
 			for (int i = 0; i < listLen(p.lexer.diagnostics); i++)
 				diagnosticPrint(p.lexer.diagnostics[i]);
 			for (int i = 0; i < listLen(p.diagnostics); i++)
 				diagnosticPrint(p.diagnostics[i]);
+			for (int i = 0; i < listLen(b.diagnostics); i++)
+				diagnosticPrint(b.diagnostics[i]);
 		} else {
 			Buf wasm = emitWasm(&b);
 
@@ -98,6 +100,9 @@ void test_walc()
 
 	test_section("walc functions");
 	test_module_function("Called by main is printed", "03_functions.wl", "main", "", "called by main!");
+
+	test_section("walc variables");
+	test_module_function("60 is printed", "04_variables.wl", "main", "", "60");
 
 	test_section("walc namespaces");
 	test_module_function("Hello namespaces is printed", "05_namespaces.wl", "main", "", "Hello namespaces");

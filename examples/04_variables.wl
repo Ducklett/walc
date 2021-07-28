@@ -3,6 +3,6 @@ export i32 main() {
     i32 b = 20;
     a = 40;
 
-    i32 c = a + b;
+    let c = a + b;
     c
 }

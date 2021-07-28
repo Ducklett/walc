@@ -670,6 +670,8 @@ WlToken wlParseStatement(WlParser *p)
 						 .valuePtr = stp,
 						 .span = spanFromTokens(st.returnKeyword, st.semicolon)};
 	} break;
+	case WlKind_KwVar: goto variableDeclaration; break;
+	case WlKind_KwLet: goto variableDeclaration; break;
 	case WlKind_Symbol: {
 		switch (wlParserLookahead(p, 1).kind) {
 		case WlKind_OpEquals: {
@@ -695,9 +697,15 @@ WlToken wlParseStatement(WlParser *p)
 			if (wlParserLookahead(p, 2).kind == WlKind_TkParenOpen) {
 				return wlParseDeclaration(p, false);
 			}
+		variableDeclaration : {
+		}
 			WlSyntaxVariableDeclaration var = {0};
 			var.export = (WlToken){.kind = WlKind_Missing};
-			var.type = wlParserMatch(p, WlKind_Symbol);
+			if (wlParserPeek(p).kind == WlKind_KwVar || wlParserPeek(p).kind == WlKind_KwLet) {
+				var.type = wlParserTake(p);
+			} else {
+				var.type = wlParserMatch(p, WlKind_Symbol);
+			}
 			var.name = wlParserMatch(p, WlKind_Symbol);
 			if (wlParserPeek(p).kind == WlKind_OpEquals) {
 				var.equals = wlParserMatch(p, WlKind_OpEquals);

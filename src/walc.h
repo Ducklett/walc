@@ -73,6 +73,8 @@ typedef enum WlKind
 	WlKind_KwReturn,
 	WlKind_KwImport,
 	WlKind_KwExport,
+	WlKind_KwVar,
+	WlKind_KwLet,
 	WlKind_Keywords_End,
 
 	WlKind_Syntax_Start,
@@ -157,6 +159,8 @@ char *WlKindText[] = {
 	"return",
 	"import",
 	"export",
+	"var",
+	"let",
 	"<keywords end>",
 
 	"<syntax start>",

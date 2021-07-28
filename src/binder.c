@@ -194,9 +194,11 @@ WlSymbol *wlPushSymbol(WlBinder *b, Str name, WlBType type, WlSymbolFlags flags)
 	return newSymbol;
 }
 
-WlSymbol *wlPushVariable(WlBinder *b, WlSpan span, Str name, WlBType type)
+WlSymbol *wlPushVariable(WlBinder *b, WlSpan span, Str name, WlBType type, bool constant)
 {
-	WlSymbol *s = wlPushSymbol(b, name, type, WlSFlag_Variable);
+	WlSymbolFlags flags = WlSFlag_Variable;
+	if (constant) flags |= WlSFlag_Constant;
+	WlSymbol *s = wlPushSymbol(b, name, type, flags);
 
 	if (!s) {
 		WlDiagnostic d = {.kind = VariableAlreadyExistsDiagnostic, .span = span, .str1 = name};
@@ -568,7 +570,6 @@ WlbNode wlBindExpressionOfType(WlBinder *b, WlToken expression, WlBType expected
 						  .num1 = n.type,
 						  .num2 = expectedType};
 		listPush(&b->diagnostics, d);
-		// PANIC("Unexpected type %d, expected %d", n.type, expectedType);
 		n.type = expectedType;
 	}
 
@@ -606,16 +607,26 @@ WlbNode wlBindStatement(WlBinder *b, WlToken statement)
 		WlSyntaxVariableDeclaration var = *(WlSyntaxVariableDeclaration *)statement.valuePtr;
 		WlBoundVariable *bvar = arenaMalloc(sizeof(WlBoundVariable), &b->arena);
 
-		WlBType type = wlBindType(var.type);
+		WlBType type = var.type.kind == WlKind_KwVar || var.type.kind == WlKind_KwLet //
+						   ? WlBType_inferStrong
+						   : wlBindType(var.type);
+
+		bool isConstant = var.type.kind == WlKind_KwLet;
 		Str name = var.name.valueStr;
 		WlSpan span = var.name.span;
-		bvar->symbol = wlPushVariable(b, span, name, type);
 
 		if (var.initializer.kind == WlKind_Missing) {
 			bvar->initializer = (WlbNode){.kind = WlBKind_None};
 		} else {
 			bvar->initializer = wlBindExpressionOfType(b, var.initializer, type);
 		}
+
+		if (type == WlBType_inferStrong) {
+			type = bvar->initializer.type;
+		}
+
+		bvar->symbol = wlPushVariable(b, span, name, type, isConstant);
+
 		return (WlbNode){.kind = WlBKind_VariableDeclaration, .data = bvar, .type = type, .span = statement.span};
 	} break;
 	case WlKind_StVariableAssignement: {
@@ -623,6 +634,9 @@ WlbNode wlBindStatement(WlBinder *b, WlToken statement)
 		WlBoundAssignment *bvar = arenaMalloc(sizeof(WlBoundAssignment), &b->arena);
 
 		WlSymbol *variable = wlFindSymbol(b, var.variable.valueStr, WlSFlag_Variable, true);
+		if (variable->flags & WlSFlag_Constant) {
+			PANIC("Cannot assign to constant");
+		}
 
 		bvar->symbol = variable;
 		bvar->expression = wlBindExpressionOfType(b, var.expression, variable->type);
