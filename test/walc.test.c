@@ -40,6 +40,7 @@ void test_module_function(char *testName, char *moduleName, char *functionName, 
 			for (int i = 0; i < listLen(b.diagnostics); i++)
 				diagnosticPrint(b.diagnostics[i]);
 		} else {
+			lower(&b);
 			Buf wasm = emitWasm(&b);
 
 			test_assert("File saves", fileWriteAllBytes("out.wasm", wasm));

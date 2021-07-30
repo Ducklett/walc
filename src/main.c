@@ -31,6 +31,7 @@ int main(int argc, char **argv)
 		for (int i = 0; i < listLen(p.diagnostics); i++)
 			diagnosticPrint(p.diagnostics[i]);
 	} else {
+		lower(&b);
 		Buf wasm = emitWasm(&b);
 		fileWriteAllBytes("out.wasm", wasm) || PANIC("Failed to write wasm");
 	}

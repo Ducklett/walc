@@ -36,8 +36,11 @@ typedef enum WlKind
 
 	WlKind_OpQuestion,
 	WlKind_BinaryOperators_End,
+	WlKind_OpPlusPlus,
+	WlKind_OpMinusMinus,
 
 	WlKind_OpEquals,
+	WlKind_OpBang,
 	WlKind_OpColon,
 
 	WlKind_TkParenOpen,
@@ -58,6 +61,7 @@ typedef enum WlKind
 	WlKind_KwSwitch,
 	WlKind_KwCase,
 	WlKind_KwDefault,
+	WlKind_KwDo,
 	WlKind_KwWhile,
 	WlKind_KwFor,
 	WlKind_KwIn,
@@ -81,6 +85,11 @@ typedef enum WlKind
 	WlKind_StFunction,
 	WlKind_StNamespace,
 	WlKind_StUse,
+	WlKind_StIf,
+	WlKind_StDo,
+	WlKind_StWhile,
+	WlKind_StDoWhile,
+	WlKind_StFor,
 	WlKind_StFunctionParameter,
 	WlKind_StVariableDeclaration,
 	WlKind_StVariableAssignement,
@@ -93,6 +102,8 @@ typedef enum WlKind
 	WlKind_StType,
 	WlKind_StBlock,
 	WlKind_StExpression,
+	WlKind_StPreUnary,
+	WlKind_StPostUnary,
 	WlKind_StImport,
 	WlKind_Syntax_End,
 } WlKind;
@@ -125,7 +136,10 @@ char *WlKindText[] = {
 	"||",
 	"?",
 	"<binary end>",
+	"++",
+	"--",
 	"=",
+	"!",
 	":",
 	"(",
 	")",
@@ -144,6 +158,7 @@ char *WlKindText[] = {
 	"switch",
 	"case",
 	"default",
+	"do",
 	"while",
 	"for",
 	"in",
@@ -167,6 +182,11 @@ char *WlKindText[] = {
 	"WlKind_StFunction",
 	"WlKind_StNamespace",
 	"WlKind_StUse",
+	"WlKind_StIf",
+	"WlKind_StDo",
+	"WlKind_StWhile",
+	"WlKind_StDoWhile",
+	"WlKind_StFor",
 	"WlKind_StFunctionParameter",
 	"WlKind_StVariableDeclaration",
 	"WlKind_StVariableAssignement",
@@ -179,6 +199,8 @@ char *WlKindText[] = {
 	"WlKind_StType",
 	"WlKind_StBlock",
 	"WlKind_StExpression",
+	"WlKind_StPreUnary",
+	"WlKind_StPostUnary",
 	"WlKind_Stimport",
 	"<syntax end>",
 };
@@ -278,6 +300,8 @@ typedef struct {
 #include <parser.c>
 
 #include <binder.c>
+
+#include <lowerer.c>
 
 #include <wasmEmitter.c>
 

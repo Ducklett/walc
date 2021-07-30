@@ -4,6 +4,7 @@
 WasmType boundTypeToWasm(WlBType t)
 {
 	switch (t) {
+	case WlBType_bool: return WasmType_I32;
 	case WlBType_i32: return WasmType_I32;
 	case WlBType_u32: return WasmType_I32;
 	case WlBType_i64: return WasmType_I64;
@@ -190,66 +191,12 @@ void emitOperator(WlBType type, WlBOperator op, DynamicBuf *opcodes)
 	}
 }
 
-void emitExpression(WlbNode expression, DynamicBuf *opcodes)
+void emitStatement(WlbNode statement, DynamicBuf *opcodes);
+void emitBlock(WlBoundBlock b, DynamicBuf *opcodes)
 {
-	switch (expression.kind) {
-	case WlBKind_BinaryExpression: {
-		WlBoundBinaryExpression bin = *(WlBoundBinaryExpression *)expression.data;
-		emitExpression(bin.left, opcodes);
-		emitExpression(bin.right, opcodes);
-		emitOperator(expression.type, bin.operator, opcodes);
-	} break;
-	case WlBKind_TernaryExpression: {
-		WlBoundTernaryExpression tr = *(WlBoundTernaryExpression *)expression.data;
-		if (tr.thenExpr.kind == WlBKind_NumberLiteral && tr.elseExpr.kind == WlBKind_NumberLiteral) {
-			emitExpression(tr.thenExpr, opcodes);
-			emitExpression(tr.elseExpr, opcodes);
-			emitExpression(tr.condition, opcodes);
-			wasmPushOpSelect(opcodes);
-		} else {
-			emitExpression(tr.condition, opcodes);
-			wasmPushOpIf(opcodes, boundTypeToWasm(expression.type));
-			emitExpression(tr.thenExpr, opcodes);
-			wasmPushOpElse(opcodes);
-			emitExpression(tr.elseExpr, opcodes);
-			wasmPushOpEnd(opcodes);
-		}
-	} break;
-	case WlBKind_NumberLiteral: {
-		switch (expression.type) {
-		case WlBType_bool: /*FALLTHROUGH*/
-		case WlBType_i32:  /*FALLTHROUGH*/
-		case WlBType_u32: wasmPushOpi32Const(opcodes, expression.dataNum); break;
-		case WlBType_i64: /*FALLTHROUGH*/
-		case WlBType_u64: wasmPushOpi64Const(opcodes, expression.dataNum); break;
-		case WlBType_f32: wasmPushOpf32Const(opcodes, expression.dataFloat); break;
-		case WlBType_f64: wasmPushOpf64Const(opcodes, expression.dataFloat); break;
-		default: PANIC("UnHandled constant type %d", expression.type);
-		}
-	} break;
-	case WlBKind_StringLiteral: {
-		int offset = wasmModuleAddData(&source, STRTOBUF(expression.dataStr));
-		int length = expression.dataStr.len;
-		wasmPushOpi32Const(opcodes, offset);
-		wasmPushOpi32Const(opcodes, length);
-	} break;
-	case WlBKind_Ref: {
-		WlSymbol *sym = expression.data;
-		wasmPushOpLocalGet(opcodes, sym->index);
-	} break;
-	case WlBKind_Call: {
-		WlBoundCallExpression call = *(WlBoundCallExpression *)expression.data;
-		for (int i = 0; i < listLen(call.args); i++) {
-			emitExpression(call.args[i], opcodes);
-		}
-
-		if (call.function->index == -1) {
-			call.function->index = wasmModuleReserveFunctionId(&source);
-		}
-
-		wasmPushOpCall(opcodes, call.function->index);
-	} break;
-	default: PANIC("Unhandled expression kind %d", expression.kind); break;
+	for (int j = 0; j < listLen(b.nodes); j++) {
+		WlbNode statementNode = b.nodes[j];
+		emitStatement(statementNode, opcodes);
 	}
 }
 
@@ -259,7 +206,7 @@ void emitStatement(WlbNode statement, DynamicBuf *opcodes)
 	case WlBKind_Return: {
 		WlBoundReturn ret = *(WlBoundReturn *)statement.data;
 		if (ret.expression.kind != WlBKind_None) {
-			emitExpression(ret.expression, opcodes);
+			emitStatement(ret.expression, opcodes);
 		}
 		wasmPushOpBrReturn(opcodes);
 
@@ -267,22 +214,116 @@ void emitStatement(WlbNode statement, DynamicBuf *opcodes)
 	case WlBKind_VariableDeclaration: {
 		WlBoundVariable var = *(WlBoundVariable *)statement.data;
 		if (var.initializer.kind != WlBKind_None) {
-			emitExpression(var.initializer, opcodes);
+			emitStatement(var.initializer, opcodes);
 			wasmPushOpLocalSet(opcodes, var.symbol->index);
 		}
 	} break;
 	case WlBKind_VariableAssignment: {
 		WlBoundAssignment var = *(WlBoundAssignment *)statement.data;
-		emitExpression(var.expression, opcodes);
+		emitStatement(var.expression, opcodes);
 		wasmPushOpLocalSet(opcodes, var.symbol->index);
 	} break;
 	case WlBKind_Function: {
 		// do nothing! These are added to the module globally
 	} break;
 	case WlBKind_None: break;
-	case WlBKind_Call:				/*FALLTHROUGH*/
-	case WlBKind_TernaryExpression: /*FALLTHROUGH*/
-	case WlBKind_BinaryExpression: emitExpression(statement, opcodes); break;
+	case WlBKind_BinaryExpression: {
+		WlBoundBinaryExpression bin = *(WlBoundBinaryExpression *)statement.data;
+		emitStatement(bin.left, opcodes);
+		emitStatement(bin.right, opcodes);
+		emitOperator(statement.type, bin.operator, opcodes);
+	} break;
+	case WlBKind_DoExpression: {
+		WlBoundBlock blk = *(WlBoundBlock *)statement.data;
+		emitBlock(blk, opcodes);
+	} break;
+	case WlBKind_TernaryExpression: {
+		WlBoundTernaryExpression tr = *(WlBoundTernaryExpression *)statement.data;
+		if (tr.thenExpr.kind == WlBKind_NumberLiteral && tr.elseExpr.kind == WlBKind_NumberLiteral) {
+			emitStatement(tr.thenExpr, opcodes);
+			emitStatement(tr.elseExpr, opcodes);
+			emitStatement(tr.condition, opcodes);
+			wasmPushOpSelect(opcodes);
+		} else {
+			emitStatement(tr.condition, opcodes);
+			wasmPushOpIf(opcodes, boundTypeToWasm(statement.type));
+			emitStatement(tr.thenExpr, opcodes);
+			wasmPushOpElse(opcodes);
+			emitStatement(tr.elseExpr, opcodes);
+			wasmPushOpEnd(opcodes);
+		}
+	} break;
+	case WlBKind_NumberLiteral: {
+		switch (statement.type) {
+		case WlBType_bool: /*FALLTHROUGH*/
+		case WlBType_i32:  /*FALLTHROUGH*/
+		case WlBType_u32: wasmPushOpi32Const(opcodes, statement.dataNum); break;
+		case WlBType_i64: /*FALLTHROUGH*/
+		case WlBType_u64: wasmPushOpi64Const(opcodes, statement.dataNum); break;
+		case WlBType_f32: wasmPushOpf32Const(opcodes, statement.dataFloat); break;
+		case WlBType_f64: wasmPushOpf64Const(opcodes, statement.dataFloat); break;
+		default: PANIC("UnHandled constant type %d", statement.type);
+		}
+	} break;
+	case WlBKind_StringLiteral: {
+		int offset = wasmModuleAddData(&source, STRTOBUF(statement.dataStr));
+		int length = statement.dataStr.len;
+		wasmPushOpi32Const(opcodes, offset);
+		wasmPushOpi32Const(opcodes, length);
+	} break;
+	case WlBKind_Ref: {
+		WlSymbol *sym = statement.data;
+		wasmPushOpLocalGet(opcodes, sym->index);
+	} break;
+	case WlBKind_Call: {
+		WlBoundCallExpression call = *(WlBoundCallExpression *)statement.data;
+		for (int i = 0; i < listLen(call.args); i++) {
+			emitStatement(call.args[i], opcodes);
+		}
+
+		if (call.function->index == -1) {
+			call.function->index = wasmModuleReserveFunctionId(&source);
+		}
+
+		wasmPushOpCall(opcodes, call.function->index);
+	} break;
+	case WlBKind_PreUnaryExpression: {
+		WlBoundPreUnaryExpression un = *(WlBoundPreUnaryExpression *)statement.data;
+
+		switch (un.operator) {
+		case WlBOperator_Negate:
+			emitStatement(un.expression, opcodes);
+			wasmPushOpi32Eqz(opcodes);
+			break;
+
+		case WlBOperator_Subtract: {
+			switch (un.expression.type) {
+			case WlBType_u32:
+			case WlBType_i32: {
+				wasmPushOpi32Const(opcodes, 0);
+				emitStatement(un.expression, opcodes);
+				wasmPushOpi32Sub(opcodes);
+			} break;
+			case WlBType_u64:
+			case WlBType_i64: {
+				wasmPushOpi64Const(opcodes, 0);
+				emitStatement(un.expression, opcodes);
+				wasmPushOpi64Sub(opcodes);
+			} break;
+			case WlBType_f32:
+				emitStatement(un.expression, opcodes);
+				wasmPushOpf32Neg(opcodes);
+				break;
+			case WlBType_f64:
+				emitStatement(un.expression, opcodes);
+				wasmPushOpf64Neg(opcodes);
+				break;
+			}
+			break;
+		}
+		default: PANIC("Unhandled pre unary operator %d", un.operator); break;
+		}
+	} break;
 	default: PANIC("Unhandled statement kind %d", statement.kind); break;
 	}
 }
@@ -351,10 +392,7 @@ Buf emitWasm(WlBinder *b)
 
 			WlbNode bodyNode = fn->body;
 			WlBoundBlock body = *(WlBoundBlock *)bodyNode.data;
-			for (int j = 0; j < listLen(body.nodes); j++) {
-				WlbNode statementNode = body.nodes[j];
-				emitStatement(statementNode, &opcodes);
-			}
+			emitBlock(body, &opcodes);
 
 			wasmModuleAddFunction(&source, (fn->symbol->flags & WlSFlag_Export) ? fn->symbol->name : STREMPTY,
 								  dynamicBufToBuf(args), dynamicBufToBuf(rets), dynamicBufToBuf(locals),

@@ -102,8 +102,12 @@ lexStart:
 	if (!current) return wlLexerBasic(l, 0, WlKind_EOF);
 
 	switch (current) {
-	case '+': return wlLexerBasic(l, 1, WlKind_OpPlus);
-	case '-': return wlLexerBasic(l, 1, WlKind_OpMinus);
+	case '+':
+		return wlLexerLookahead(l, 1) == '+' ? wlLexerBasic(l, 2, WlKind_OpPlusPlus)
+											 : wlLexerBasic(l, 1, WlKind_OpPlus);
+	case '-':
+		return wlLexerLookahead(l, 1) == '-' ? wlLexerBasic(l, 2, WlKind_OpMinusMinus)
+											 : wlLexerBasic(l, 1, WlKind_OpMinus);
 	case '*': return wlLexerBasic(l, 1, WlKind_OpStar);
 	case '%': return wlLexerBasic(l, 1, WlKind_OpPercent);
 	case '/': return wlLexerBasic(l, 1, WlKind_OpSlash);
@@ -113,11 +117,8 @@ lexStart:
 		else
 			return wlLexerBasic(l, 1, WlKind_OpEquals);
 	case '!':
-		if (wlLexerLookahead(l, 1) == '=') {
-			return wlLexerBasic(l, 2, WlKind_OpBangEquals);
-		} else {
-			goto unmatched;
-		}
+		return wlLexerLookahead(l, 1) == '=' ? wlLexerBasic(l, 2, WlKind_OpBangEquals)
+											 : wlLexerBasic(l, 1, WlKind_OpBang);
 		break;
 	case '<':
 		if (wlLexerLookahead(l, 1) == '<')
@@ -257,7 +258,8 @@ lexStart:
 			for (int i = WlKind_Keywords_Start + 1; i < WlKind_Keywords_End; i++) {
 				// TODO: bake into Str's beforehand so we don't have to convert from cstr
 				Str keyword = strFromCstr(WlKindText[i]);
-				if (strEqual(strSlice(l->source, l->index, keyword.len), keyword)) {
+				char afterKeyword = wlLexerLookahead(l, keyword.len);
+				if (strEqual(strSlice(l->source, l->index, keyword.len), keyword) && !isSymbol(afterKeyword)) {
 					int start = l->index;
 					l->index += keyword.len;
 					return (WlToken){
@@ -321,6 +323,16 @@ typedef struct {
 } WlBinaryExpression;
 
 typedef struct {
+	WlToken operator;
+	WlToken expression;
+} WlPreUnaryExpression;
+
+typedef struct {
+	WlToken expression;
+	WlToken operator;
+} WlPostUnaryExpression;
+
+typedef struct {
 	WlToken condition;
 	WlToken question;
 	WlToken thenExpr;
@@ -374,6 +386,43 @@ typedef struct {
 	List(WlToken) path;
 	WlToken semicolon;
 } WlSyntaxUse;
+
+typedef struct {
+	WlToken ifKeyword;
+	WlToken condition;
+	WlSyntaxBlock thenBlock;
+	WlToken elseKeyword;
+	WlSyntaxBlock elseBlock;
+} WlSyntaxIf;
+
+typedef struct {
+	WlToken doKeyword;
+	WlSyntaxBlock block;
+} WlSyntaxDo;
+
+typedef struct {
+	WlToken whileKeyword;
+	WlToken condition;
+	WlSyntaxBlock block;
+} WlSyntaxWhile;
+
+typedef struct {
+	WlToken doKeyword;
+	WlSyntaxBlock block;
+	WlToken whileKeyword;
+	WlToken condition;
+	WlToken semicolon;
+} WlSyntaxDoWhile;
+
+typedef struct {
+	WlToken forKeyword;
+	WlToken preCondition;
+	WlToken semicolon;
+	WlToken condition;
+	WlToken semicolon2;
+	WlToken postCondition;
+	WlSyntaxBlock block;
+} WlSyntaxFor;
 
 typedef struct {
 	WlToken import;
@@ -466,9 +515,16 @@ WlToken wlParserMatch_impl(WlParser *p, WlKind kind, const char *file, int line)
 
 void wlParserAddTopLevelStatement(WlParser *p, WlToken tk) { listPush(&p->topLevelDeclarations, tk); }
 
+typedef enum
+{
+	BlockParseStatements = 0,
+	BlockParseDeclarations = 1,
+} BlockParseOptions;
+
 WlToken wlParseDeclaration(WlParser *p, bool topLevel);
 WlToken wlParseExpression(WlParser *p);
 WlToken wlParseUse(WlParser *p);
+WlSyntaxBlock wlParseBlock(WlParser *p, BlockParseOptions options);
 
 WlToken wlParseParameter(WlParser *p)
 {
@@ -535,6 +591,33 @@ List(WlToken) wlParseReferencePath(WlParser *p)
 WlToken wlParsePrimaryExpression(WlParser *p)
 {
 	switch (wlParserPeek(p).kind) {
+
+	case WlKind_KwDo: {
+		WlSyntaxDo st = {0};
+		st.doKeyword = wlParserMatch(p, WlKind_KwDo);
+		st.block = wlParseBlock(p, BlockParseStatements);
+
+		WlSyntaxDo *stp = arenaMalloc(sizeof(WlSyntaxDo), &p->arena);
+		*stp = st;
+		return (
+			WlToken){.kind = WlKind_StDo, .valuePtr = stp, .span = spanFromTokens(st.doKeyword, st.block.curlyClose)};
+	} break;
+	case WlKind_OpPlusPlus:
+	case WlKind_OpMinusMinus:
+	case WlKind_OpMinus:
+	case WlKind_OpBang: {
+		WlPreUnaryExpression expr = {0};
+		expr.operator= wlParserTake(p);
+		expr.expression = wlParsePrimaryExpression(p);
+		WlPreUnaryExpression *exprp = arenaMalloc(sizeof(WlPreUnaryExpression), &p->arena);
+		*exprp = expr;
+
+		return (WlToken){
+			.kind = WlKind_StPreUnary,
+			.valuePtr = exprp,
+			.span = spanFromTokens(expr.operator, expr.expression),
+		};
+	} break;
 	case WlKind_Number: return wlParserTake(p);
 	case WlKind_FloatNumber: return wlParserTake(p);
 	case WlKind_String: return wlParserTake(p);
@@ -558,13 +641,31 @@ WlToken wlParsePrimaryExpression(WlParser *p)
 				.span = spanFromTokens(call.path[0], call.parenClose),
 			};
 		} else {
-			return (WlToken){
+			WlToken ref = {
 				.kind = WlKind_StRef,
 				.valuePtr = path,
 				.span = spanFromTokens(path[0], path[listLen(path) - 1]),
 			};
+
+			if (wlParserPeek(p).kind == WlKind_OpPlusPlus || wlParserPeek(p).kind == WlKind_OpMinusMinus) {
+				WlPostUnaryExpression post = {
+					.expression = ref,
+					.operator= wlParserTake(p),
+				};
+				WlPostUnaryExpression *postp = arenaMalloc(sizeof(WlPostUnaryExpression), &p->arena);
+				*postp = post;
+
+				WlToken ref = {
+					.kind = WlKind_StPostUnary,
+					.valuePtr = postp,
+					.span = spanFromTokens(ref, post.expression),
+				};
+				return ref;
+			} else {
+				return ref;
+			}
 		}
-	}
+	} break;
 	default: return parserReport(p, UnexpectedTokenInPrimaryExpressionDiagnostic, wlParserTake(p), 0);
 	}
 }
@@ -652,6 +753,7 @@ WlToken wlParseStatement(WlParser *p)
 {
 	switch (wlParserPeek(p).kind) {
 	case WlKind_KwUse: return wlParseUse(p); break;
+
 	case WlKind_KwReturn: {
 		WlReturnStatement st = {0};
 
@@ -726,6 +828,67 @@ WlToken wlParseStatement(WlParser *p)
 		}
 
 	} break;
+	case WlKind_KwIf: {
+		WlSyntaxIf st = {0};
+		st.ifKeyword = wlParserMatch(p, WlKind_KwIf);
+		st.thenBlock = wlParseBlock(p, BlockParseStatements);
+		WlToken last;
+		if (wlParserPeek(p).kind == WlKind_KwElse) {
+			st.elseKeyword = wlParserMatch(p, WlKind_KwElse);
+			st.elseBlock = wlParseBlock(p, BlockParseStatements);
+			last = st.elseBlock.curlyClose;
+		} else {
+			st.elseKeyword = (WlToken){.kind = WlKind_Missing};
+			last = st.thenBlock.curlyClose;
+		}
+
+		WlSyntaxIf *stp = arenaMalloc(sizeof(WlSyntaxIf), &p->arena);
+		*stp = st;
+		return (WlToken){.kind = WlKind_StIf, .valuePtr = stp, .span = spanFromTokens(st.ifKeyword, last)};
+
+	} break;
+	case WlKind_KwDo: {
+		WlSyntaxDoWhile st = {0};
+		st.doKeyword = wlParserMatch(p, WlKind_KwDo);
+		st.block = wlParseBlock(p, BlockParseStatements);
+
+		st.whileKeyword = wlParserMatch(p, WlKind_KwWhile);
+		st.condition = wlParseExpression(p);
+		st.semicolon = wlParserMatch(p, WlKind_TkSemicolon);
+		WlSyntaxDoWhile *stp = arenaMalloc(sizeof(WlSyntaxDoWhile), &p->arena);
+		*stp = st;
+		return (WlToken){.kind = WlKind_StDoWhile, .valuePtr = stp, .span = spanFromTokens(st.doKeyword, st.semicolon)};
+	} break;
+	case WlKind_KwWhile: {
+		WlSyntaxWhile st = {0};
+		st.whileKeyword = wlParserMatch(p, WlKind_KwIf);
+		st.condition = wlParseExpression(p);
+		st.block = wlParseBlock(p, BlockParseStatements);
+
+		WlSyntaxWhile *stp = arenaMalloc(sizeof(WlSyntaxWhile), &p->arena);
+		*stp = st;
+		return (WlToken){.kind = WlKind_StWhile,
+						 .valuePtr = stp,
+						 .span = spanFromTokens(st.whileKeyword, st.block.curlyClose)};
+
+	} break;
+	case WlKind_KwFor: {
+		WlSyntaxFor st = {0};
+		st.forKeyword = wlParserMatch(p, WlKind_KwIf);
+		st.preCondition = wlParseExpression(p);
+		st.semicolon = wlParserMatch(p, WlKind_TkSemicolon);
+		st.condition = wlParseExpression(p);
+		st.semicolon2 = wlParserMatch(p, WlKind_TkSemicolon);
+		st.postCondition = wlParseExpression(p);
+		st.block = wlParseBlock(p, BlockParseStatements);
+
+		WlSyntaxFor *stp = arenaMalloc(sizeof(WlSyntaxFor), &p->arena);
+		*stp = st;
+		return (WlToken){.kind = WlKind_StWhile,
+						 .valuePtr = stp,
+						 .span = spanFromTokens(st.forKeyword, st.block.curlyClose)};
+
+	} break;
 	default: {
 	defaultExpression : {
 	}
@@ -754,12 +917,6 @@ WlToken wlParseStatement(WlParser *p)
 	} break;
 	}
 }
-
-typedef enum
-{
-	BlockParseStatements = 0,
-	BlockParseDeclarations = 1,
-} BlockParseOptions;
 
 WlSyntaxBlock wlParseBlock(WlParser *p, BlockParseOptions options)
 {

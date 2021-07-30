@@ -18,6 +18,22 @@ export f64 testFloat2() { 10 / 3 }
 export f32 testFloat3() { 1.2 }
 export f32 testFloat4() { 10 / 3 }
 
+export i64 preIncrement(i64 n) { ++n }
+export i64 preDecrement(i64 n) { --n }
+export i64 postIncrement(i64 n) { n++ }
+export i64 postDecrement(i64 n) { n-- }
+export i64 negate(i64 b) { -b }
+export bool negateBool(bool b) { !b }
+
+export i64 something() {
+    // you can use do blocks to perform advances calculations withing an expression
+    10 + do {
+        let a  = 4;
+        let b = 3;
+        a * b
+    }
+}
+
 export isBig(i32 x) { x > 10 ? print("Big") : print("Small"); }
 
 export main() {
