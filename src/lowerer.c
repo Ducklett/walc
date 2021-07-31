@@ -79,6 +79,13 @@ void lowerNode(WlBinder *b, WlbNode *n)
 	} break;
 	case WlBKind_VariableDeclaration: {
 		WlBoundVariable *st = n->data;
+
+		// constants are inlined, so the declaration can disappear
+		if (st->symbol->flags & WlSFlag_Constant) {
+			n->kind = WlBKind_None;
+			return;
+		}
+
 		if (st->initializer.kind != WlBKind_None) {
 			n->kind = WlBKind_VariableAssignment;
 			WlBoundAssignment *assigment = arenaMalloc(sizeof(WlBoundAssignment), &b->arena);
@@ -92,6 +99,11 @@ void lowerNode(WlBinder *b, WlbNode *n)
 	} break;
 	case WlBKind_VariableAssignment: {
 		WlBoundAssignment *st = n->data;
+		// oops! abstract type slipped through...
+		// TODO: maybe do this elsewhere
+		if (st->symbol->type != st->expression.type) {
+			propagateType(&st->expression, st->symbol->type);
+		}
 		lowerNode(b, &st->expression);
 	} break;
 	case WlBKind_Call: {
@@ -100,7 +112,13 @@ void lowerNode(WlBinder *b, WlbNode *n)
 			lowerNode(b, &st->args[i]);
 		}
 	} break;
-	case WlBKind_Ref: break;
+	case WlBKind_Ref: {
+		WlSymbol *s = n->data;
+		if (s->flags & WlSFlag_Constant) {
+			propagateType(s->initializer, n->type);
+			*n = *s->initializer;
+		}
+	} break;
 	case WlBKind_Return: {
 		WlBoundReturn *st = n->data;
 		lowerNode(b, &st->expression);

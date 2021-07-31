@@ -79,23 +79,33 @@ typedef enum
 	WlSFlag_Struct = 3,
 	WlSFlag_Namespace = 4,
 
+	// constants are known at compile time, cannot change and may be inlined
 	WlSFlag_Constant = 8,
-	WlSFlag_Import = 16,
-	WlSFlag_Export = 32,
+	// immutables are not known at compile time but cannot change
+	WlSFlag_Immutable = 16,
+	WlSFlag_Import = 32,
+	WlSFlag_Export = 64,
 } WlSymbolFlags;
 
 struct WlBoundFunction;
 
 struct WlScope;
+struct WlbNode;
 
-typedef struct {
+typedef struct WlSymbol {
 	int index;
 	Str name;
 	WlBType type;
 	WlSymbolFlags flags;
 	union {
+		// if function
 		struct WlBoundFunction *function;
+		// if namespace
 		struct WlScope *scope;
+		// if variable
+		List(struct WlSymbol *) typeLinked;
+		// if constant
+		struct WlbNode *initializer;
 	};
 } WlSymbol;
 
@@ -105,7 +115,7 @@ typedef struct WlScope {
 	struct WlScope *parentScope;
 } WlScope;
 
-typedef struct {
+typedef struct WlbNode {
 	WlBKind kind;
 	WlBType type;
 	WlSpan span;
@@ -205,6 +215,7 @@ typedef struct {
 	List(WlBoundUse *) uses;
 	List(WlScope *) scopes;
 	List(WlDiagnostic) diagnostics;
+	WlSymbol *currentVariable;
 	WlBType currentReturnType;
 	ArenaAllocator arena;
 } WlBinder;
@@ -259,7 +270,7 @@ WlSymbol *wlPushSymbol(WlBinder *b, Str name, WlBType type, WlSymbolFlags flags)
 WlSymbol *wlPushVariable(WlBinder *b, WlSpan span, Str name, WlBType type, bool constant)
 {
 	WlSymbolFlags flags = WlSFlag_Variable;
-	if (constant) flags |= WlSFlag_Constant;
+	if (constant) flags |= WlSFlag_Constant | WlSFlag_Immutable;
 	WlSymbol *s = wlPushSymbol(b, name, type, flags);
 
 	if (!s) {
@@ -365,6 +376,11 @@ WlSymbol *wlFindSymbol(WlBinder *b, Str name, WlSymbolFlags flags, bool recurse)
 	return wlFindSymbolInScope(b, s, name, flags, recurse);
 }
 
+isLiteral(WlBKind kind)
+{
+	return kind == WlBKind_NumberLiteral || kind == WlBKind_BoolLiteral || kind == WlBKind_StringLiteral;
+}
+
 WlBOperator wlBindOperator(WlToken op)
 {
 	switch (op.kind) {
@@ -393,10 +409,146 @@ WlBOperator wlBindOperator(WlToken op)
 	}
 }
 
+int getTypeSpecificity(WlBType t)
+{
+	switch (t) {
+
+	case WlBType_u0:   /*FALLTHROUGH*/
+	case WlBType_bool: /*FALLTHROUGH*/
+	case WlBType_u8:   /*FALLTHROUGH*/
+	case WlBType_i8:   /*FALLTHROUGH*/
+	case WlBType_u16:  /*FALLTHROUGH*/
+	case WlBType_i16:  /*FALLTHROUGH*/
+	case WlBType_u32:  /*FALLTHROUGH*/
+	case WlBType_i32:  /*FALLTHROUGH*/
+	case WlBType_u64:  /*FALLTHROUGH*/
+	case WlBType_i64:  /*FALLTHROUGH*/
+	case WlBType_f32:  /*FALLTHROUGH*/
+	case WlBType_f64:  /*FALLTHROUGH*/
+	case WlBType_str: return 4;
+	// ==================
+	case WlBType_unknown: return 0;
+	case WlBType_integerNumber: return 2;
+	case WlBType_floatingNumber: return 3;
+	case WlBType_inferStrong: return 1;
+	case WlBType_inferWeak: return 0;
+	default: PANIC("Unhandled type specificity %d", t);
+	}
+}
+
 bool wlIsNumberType(WlBType t) { return (t >= WlBType_u8 && t <= WlBType_f64); }
 bool wlIsIntegerType(WlBType t) { return (t >= WlBType_u8 && t <= WlBType_i64); }
 bool wlIsFloatType(WlBType t) { return (t == WlBType_f32 || t == WlBType_f64); }
 bool wlIsConcreteType(WlBType t) { return (t < WlBType_end); }
+bool isSubType(WlBType child, WlBType parent)
+
+{
+	switch (child) {
+	case WlBType_inferStrong: return true;
+	case WlBType_inferWeak: return true;
+	case WlBType_integerNumber: return parent == WlBType_floatingNumber || wlIsNumberType(parent);
+	case WlBType_floatingNumber: return wlIsFloatType(parent);
+	default: return false;
+	}
+}
+
+void propagateVariableType(WlSymbol *s, WlBType type)
+{
+	assert(s != NULL);
+
+	// constants keep their most abstract possible type
+	// that way they can be used in any context
+	if (s->flags & WlSFlag_Constant) {
+		assert(s->type == type || isSubType(s->type, type));
+		return;
+	}
+
+	s->type = type;
+	for (int i = 0; i < listLen(s->typeLinked); i++) {
+		WlSymbol *linked = s->typeLinked[i];
+		assert(linked != NULL);
+		if (linked->type == type) continue;
+		if (isSubType(linked->type, type)) {
+			propagateVariableType(linked, type);
+		} else {
+			PANIC("expected %.*s to be of type %d but it is of type %d", STRPRINT(linked->name), type, linked->type);
+		}
+	}
+}
+
+// changes the type of an expression after a more concrete type is found
+void propagateType(WlbNode *expr, WlBType type)
+{
+	assert(!wlIsConcreteType(expr->type));
+	assert(expr->type != type);
+
+	expr->type = type;
+
+	switch (expr->kind) {
+	case WlBKind_BinaryExpression: {
+		WlBoundBinaryExpression *bin = expr->data;
+		propagateType(&bin->left, type);
+		propagateType(&bin->right, type);
+	} break;
+	case WlBKind_TernaryExpression: {
+		WlBoundTernaryExpression *tr = expr->data;
+		propagateType(&tr->thenExpr, type);
+		propagateType(&tr->elseExpr, type);
+	} break;
+	case WlBKind_NumberLiteral: {
+		if (wlIsFloatType(type) && expr->type == WlBType_integerNumber) {
+			expr->dataFloat = (f64)expr->dataNum;
+		}
+	} break;
+	case WlBKind_DoExpression: {
+		WlBoundBlock *blk = expr->data;
+		WlbNode last = listPeek(&blk->nodes);
+		propagateType(&last, type);
+	} break;
+	case WlBKind_Return: {
+		WlBoundReturn *ret = expr->data;
+		propagateType(&ret->expression, type);
+	} break;
+	case WlBKind_Ref: {
+		WlSymbol *s = expr->data;
+		propagateVariableType(s, type);
+	} break;
+	default: PANIC("Unhandled kind in propagateType %d", expr->kind);
+	}
+}
+
+WlBType makeContreteType(WlBType t)
+{
+	switch (t) {
+	case WlBType_integerNumber: return WlBType_i64;
+	case WlBType_floatingNumber: return WlBType_f64;
+	default: return t;
+	}
+}
+
+void softCast(WlBinder *b, WlbNode *n, WlBType expected)
+{
+	if (n->type == expected) return;
+	if (expected == WlBType_inferWeak) return;
+
+	if (expected == WlBType_inferStrong) {
+		if (!wlIsConcreteType(n->type)) {
+			propagateType(n, makeContreteType(n->type));
+		}
+		return;
+	}
+
+	if (isSubType(n->type, expected)) {
+		propagateType(n, expected);
+	} else {
+		WlDiagnostic d = {.kind = CannotImplicitlyConvertDiagnostic,
+						  .span = n->span,
+						  .num1 = n->type,
+						  .num2 = expected};
+		listPush(&b->diagnostics, d);
+		n->type = expected;
+	}
+}
 
 WlbNode wlBindFunction(WlBinder *b, WlToken tk);
 WlbNode wlBindUse(WlBinder *b, List(WlToken) path);
@@ -425,33 +577,6 @@ WlBType resolveBinaryExpressionType(WlBType operandType, WlBOperator op)
 	case WlBOperator_And: return WlBType_bool;
 	case WlBOperator_Or: return WlBType_bool;
 	default: PANIC("Unhandled binary expression operator %d", op); break;
-	}
-}
-
-// changes the type of an expression after a more concrete type is found
-void propagateType(WlbNode *expr, WlBType type)
-{
-	assert(!wlIsConcreteType(expr->type));
-
-	switch (expr->kind) {
-	case WlBKind_BinaryExpression: {
-		WlBoundBinaryExpression *bin = expr->data;
-		propagateType(&bin->left, type);
-		propagateType(&bin->right, type);
-		expr->type = type;
-	} break;
-	case WlBKind_TernaryExpression: {
-		WlBoundTernaryExpression *tr = expr->data;
-		propagateType(&tr->thenExpr, type);
-		propagateType(&tr->elseExpr, type);
-		expr->type = type;
-	} break;
-	case WlBKind_NumberLiteral: {
-		if (wlIsFloatType(type) && expr->type == WlBType_integerNumber) {
-			expr->dataFloat = (f64)expr->dataNum;
-		}
-		expr->type = type;
-	} break;
 	}
 }
 
@@ -510,16 +635,11 @@ WlbNode wlBindExpression(WlBinder *b, WlToken expression)
 			bex.right = wlBindExpression(b, ex.right);
 		}
 
-		// TODO: fix this disgusting mess
 		if (bex.left.type != bex.right.type) {
-			if (wlIsConcreteType(bex.left.type) && !wlIsConcreteType(bex.right.type)) {
-				propagateType(&bex.right, bex.left.type);
-			} else if ((!wlIsConcreteType(bex.left.type) && wlIsConcreteType(bex.right.type))) {
-				propagateType(&bex.left, bex.right.type);
-			} else if (bex.left.type == WlBType_integerNumber && bex.right.type == WlBType_floatingNumber) {
-				propagateType(&bex.left, WlBType_floatingNumber);
-			} else if (bex.left.type == WlBType_floatingNumber && bex.right.type == WlBType_integerNumber) {
-				propagateType(&bex.right, WlBType_floatingNumber);
+			if (isSubType(bex.left.type, bex.right.type)) {
+				softCast(b, &bex.left, bex.right.type);
+			} else if (isSubType(bex.right.type, bex.left.type)) {
+				softCast(b, &bex.right, bex.left.type);
 			} else {
 				PANIC("Binary expression operands must be of same type, got %d %d", bex.left.type, bex.right.type);
 			}
@@ -642,6 +762,7 @@ WlbNode wlBindExpression(WlBinder *b, WlToken expression)
 		WlSyntaxDo exp = *(WlSyntaxDo *)expression.valuePtr;
 		b->currentReturnType = WlBType_inferWeak;
 		WlbNode expr = wlBindBlock(b, exp.block, true);
+		assert(listLen(((WlBoundBlock *)expr.data)->nodes) > 0);
 		if (expr.type == WlBType_u0) PANIC("Do block must return a value");
 
 		expr.kind = WlBKind_DoExpression;
@@ -653,49 +774,11 @@ WlbNode wlBindExpression(WlBinder *b, WlToken expression)
 	}
 }
 
-WlBType makeContreteType(WlBType t)
-{
-	switch (t) {
-	case WlBType_integerNumber: return WlBType_i64;
-	case WlBType_floatingNumber: return WlBType_f64;
-	default: return t;
-	}
-}
-
 WlbNode wlBindExpressionOfType(WlBinder *b, WlToken expression, WlBType expectedType)
 {
 	WlbNode n = wlBindExpression(b, expression);
 
-	if (n.type == expectedType) return n;
-	if (expectedType == WlBType_inferWeak) return n;
-
-	if (expectedType == WlBType_inferStrong) {
-		if (!wlIsConcreteType(n.type)) {
-			propagateType(&n, makeContreteType(n.type));
-		}
-		return n;
-	}
-
-	assert(wlIsConcreteType(expectedType));
-
-	if (!wlIsConcreteType(n.type)) {
-		if ((wlIsIntegerType(expectedType) && n.type == WlBType_floatingNumber)) {
-			// expected int but got float, make it concrete and report error at the end of the function
-			propagateType(&n, makeContreteType(n.type));
-		} else {
-			propagateType(&n, expectedType);
-			return n;
-		}
-	}
-
-	if (n.type != expectedType) {
-		WlDiagnostic d = {.kind = CannotImplicitlyConvertDiagnostic,
-						  .span = n.span,
-						  .num1 = n.type,
-						  .num2 = expectedType};
-		listPush(&b->diagnostics, d);
-		n.type = expectedType;
-	}
+	softCast(b, &n, expectedType);
 
 	return n;
 }
@@ -734,10 +817,10 @@ WlbNode wlBindStatement(WlBinder *b, WlToken statement)
 		WlBoundVariable *bvar = arenaMalloc(sizeof(WlBoundVariable), &b->arena);
 
 		WlBType type = var.type.kind == WlKind_KwVar || var.type.kind == WlKind_KwLet //
-						   ? WlBType_inferStrong
+						   ? WlBType_inferWeak
 						   : wlBindType(var.type);
 
-		bool isConstant = var.type.kind == WlKind_KwLet;
+		bool isConstant = false;
 		Str name = var.name.valueStr;
 		WlSpan span = var.name.span;
 
@@ -745,6 +828,9 @@ WlbNode wlBindStatement(WlBinder *b, WlToken statement)
 			bvar->initializer = (WlbNode){.kind = WlBKind_None};
 		} else {
 			bvar->initializer = wlBindExpressionOfType(b, var.initializer, type);
+			if (var.type.kind == WlKind_KwLet && isLiteral(bvar->initializer.kind)) {
+				isConstant = true;
+			}
 		}
 
 		if (type == WlBType_inferStrong) {
@@ -752,6 +838,8 @@ WlbNode wlBindStatement(WlBinder *b, WlToken statement)
 		}
 
 		bvar->symbol = wlPushVariable(b, span, name, type, isConstant);
+		if (var.type.kind == WlKind_KwLet) bvar->symbol->flags |= WlSFlag_Immutable;
+		if (isConstant) bvar->symbol->initializer = &bvar->initializer;
 
 		return (WlbNode){.kind = WlBKind_VariableDeclaration, .data = bvar, .type = type, .span = statement.span};
 	} break;
@@ -760,8 +848,8 @@ WlbNode wlBindStatement(WlBinder *b, WlToken statement)
 		WlBoundAssignment *bvar = arenaMalloc(sizeof(WlBoundAssignment), &b->arena);
 
 		WlSymbol *variable = wlFindSymbol(b, var.variable.valueStr, WlSFlag_Variable, true);
-		if (variable->flags & WlSFlag_Constant) {
-			PANIC("Cannot assign to constant");
+		if (variable->flags & WlSFlag_Immutable) {
+			PANIC("Cannot assign to immutable %.*s", STRPRINT(variable->name));
 		}
 
 		bvar->symbol = variable;
@@ -891,7 +979,7 @@ WlbNode wlBindFunction(WlBinder *b, WlToken tk)
 
 	WlBType returnType = wlBindType(fn.type);
 
-	WlSymbolFlags flags = WlSFlag_Function | WlSFlag_Constant;
+	WlSymbolFlags flags = WlSFlag_Function | WlSFlag_Immutable;
 	if (fn.export.kind == WlKind_KwExport) flags |= WlSFlag_Export;
 	WlSymbol *functionSymbol = wlPushSymbol(b, fn.name.valueStr, returnType, flags);
 
@@ -911,7 +999,7 @@ WlbNode wlBindFunction(WlBinder *b, WlToken tk)
 
 		WlBType paramType = wlBindType(param.type);
 
-		wlPushSymbol(b, param.name.valueStr, paramType, WlSFlag_Variable | WlSFlag_Constant);
+		wlPushSymbol(b, param.name.valueStr, paramType, WlSFlag_Variable | WlSFlag_Immutable);
 	}
 
 	bf->scope = s;
@@ -1004,7 +1092,7 @@ void wlBindDeclarations(WlBinder *b, List(WlToken) declarations)
 			WlBoundFunction *bf = arenaMalloc(sizeof(WlBoundFunction), &b->arena);
 
 			WlSymbol *functionSymbol =
-				wlPushSymbol(b, im.name.valueStr, WlBType_u0, WlSFlag_Function | WlSFlag_Constant | WlSFlag_Import);
+				wlPushSymbol(b, im.name.valueStr, WlBType_u0, WlSFlag_Function | WlSFlag_Immutable | WlSFlag_Import);
 			bf->symbol = functionSymbol;
 			WlScope *s = WlCreateAndPushScope(b);
 			functionSymbol->function = bf;
@@ -1017,7 +1105,7 @@ void wlBindDeclarations(WlBinder *b, List(WlToken) declarations)
 				WlSyntaxParameter param = *(WlSyntaxParameter *)paramToken.valuePtr;
 
 				WlBType paramType = wlBindType(param.type);
-				wlPushSymbol(b, param.name.valueStr, paramType, WlSFlag_Variable | WlSFlag_Constant);
+				wlPushSymbol(b, param.name.valueStr, paramType, WlSFlag_Variable | WlSFlag_Immutable);
 			}
 
 			WlPopScope(b);

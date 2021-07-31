@@ -99,6 +99,8 @@ void test_walc()
 	// but are they always mangled in the same way?
 	test_module_function("testFloat3() == 1.2", "02_expressions.wl", "testFloat3", "", "1.2000000476837158");
 
+	test_module_function("something() == 22", "02_expressions.wl", "something", "", "22");
+
 	test_section("walc functions");
 	test_module_function("Called by main is printed", "03_functions.wl", "main", "", "called by main!");
 

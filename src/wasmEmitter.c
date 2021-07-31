@@ -372,11 +372,6 @@ Buf emitWasm(WlBinder *b)
 
 	wasmModuleAddMemory(&source, STR("memory"), 1, 2);
 
-	// u8 args[] = {WasmType_I32, WasmType_I32};
-
-	// // import print (hardcoded for now)
-	// fnPrint = wasmModuleAddImport(&source, STR("print"), BUF(args), BUFEMPTY);
-
 	int functionCount = listLen(b->functions);
 	for (int i = 0; i < functionCount; i++) {
 		varOffset = 0;
@@ -414,7 +409,9 @@ Buf emitWasm(WlBinder *b)
 
 			for (int i = fn->paramCount; i < listLen(fn->scope->symbols); i++) {
 				WlSymbol *local = fn->scope->symbols[i];
+				// TODO: maybe filter out functions and constants before reaching the emitter
 				if ((local->flags & WlSFlag_TypeBits) == WlSFlag_Function) continue;
+				if ((local->flags & WlSFlag_Constant)) continue;
 				local->index = varOffset;
 				if (local->type == WlBType_str) {
 					dynamicBufPush(&locals, WasmType_I32);

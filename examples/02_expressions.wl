@@ -25,8 +25,9 @@ export i64 postDecrement(i64 n) { n-- }
 export i64 negate(i64 b) { -b }
 export bool negateBool(bool b) { !b }
 
-export i64 something() {
+export i32 something() {
     // you can use do blocks to perform advanced calculations within an expression
+    // the return type is i32 and the rest of the types are inferred from there on out
     10 + do {
         let a  = 4;
         let b = 3;
