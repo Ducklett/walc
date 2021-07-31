@@ -187,6 +187,7 @@ typedef struct {
 	WlbNode condition;
 	WlbNode postCondition;
 	WlbNode block;
+	WlScope *scope;
 } WlBoundFor;
 
 typedef struct WlBoundVariable {
@@ -207,6 +208,24 @@ typedef struct {
 	WlBType currentReturnType;
 	ArenaAllocator arena;
 } WlBinder;
+
+WlScope *WlCreateAndPushScope(WlBinder *b)
+{
+	WlScope *scope = arenaMalloc(sizeof(WlScope), &b->arena);
+	*scope = (WlScope){
+		.usedScopes = listNew(),
+		.symbols = listNew(),
+		.parentScope = listPeek(&b->scopes),
+	};
+	listPush(&b->scopes, scope);
+	return scope;
+};
+
+void WlPopScope(WlBinder *b)
+{
+	listPop(&b->scopes);
+	assert(!listIsEmpty(b->scopes) && "The global scope shouldn't be popped");
+}
 
 WlSymbol *wlFindSymbol(WlBinder *b, Str name, WlSymbolFlags flags, bool recurse);
 
@@ -751,6 +770,45 @@ WlbNode wlBindStatement(WlBinder *b, WlToken statement)
 		return (
 			WlbNode){.kind = WlBKind_VariableAssignment, .data = bvar, .type = variable->type, .span = statement.span};
 	} break;
+	case WlKind_StIf: {
+		WlSyntaxIf st = *(WlSyntaxIf *)statement.valuePtr;
+		WlBoundIf *bi = arenaMalloc(sizeof(WlBoundIf), &b->arena);
+		bi->condition = wlBindExpressionOfType(b, st.condition, WlBType_bool);
+		bi->thenBlock = wlBindBlock(b, st.thenBlock, true);
+		bi->elseBlock = st.elseKeyword.kind == WlKind_Missing //
+							? (WlbNode){.kind = WlBKind_None}
+							: wlBindBlock(b, st.elseBlock, true);
+		return (WlbNode){.kind = WlBKind_If, .data = bi, .type = WlBType_u0, .span = statement.span};
+	} break;
+	case WlKind_StFor: {
+		WlSyntaxFor st = *(WlSyntaxFor *)statement.valuePtr;
+		WlBoundFor *bf = arenaMalloc(sizeof(WlBoundFor), &b->arena);
+
+		bf->scope = WlCreateAndPushScope(b);
+		bf->preCondition = wlBindStatement(b, st.preCondition);
+		assert(st.condition.kind == WlKind_StExpressionStatement);
+		bf->condition =
+			wlBindExpressionOfType(b, ((WlExpressionStatement *)st.condition.valuePtr)->expression, WlBType_bool);
+		bf->postCondition = wlBindStatement(b, st.postCondition);
+		bf->block = wlBindBlock(b, st.block, true);
+		WlPopScope(b);
+
+		return (WlbNode){.kind = WlBKind_ForLoop, .data = bf, .type = WlBType_u0, .span = statement.span};
+	} break;
+	case WlKind_StWhile: {
+		WlSyntaxWhile st = *(WlSyntaxWhile *)statement.valuePtr;
+		WlBoundWhile *bf = arenaMalloc(sizeof(WlBoundWhile), &b->arena);
+		bf->condition = wlBindExpressionOfType(b, st.condition, WlBType_bool);
+		bf->block = wlBindBlock(b, st.block, true);
+		return (WlbNode){.kind = WlBKind_WhileLoop, .data = bf, .type = WlBType_u0, .span = statement.span};
+	} break;
+	case WlKind_StDoWhile: {
+		WlSyntaxDoWhile st = *(WlSyntaxDoWhile *)statement.valuePtr;
+		WlBoundDoWhile *bf = arenaMalloc(sizeof(WlBoundDoWhile), &b->arena);
+		bf->condition = wlBindExpressionOfType(b, st.condition, WlBType_bool);
+		bf->block = wlBindBlock(b, st.block, true);
+		return (WlbNode){.kind = WlBKind_DoWhileLoop, .data = bf, .type = WlBType_u0, .span = statement.span};
+	} break;
 	case WlKind_StFunction: return wlBindFunction(b, statement);
 	case WlKind_StUse: return wlBindUse(b, ((WlSyntaxUse *)statement.valuePtr)->path);
 	default: PANIC("Unhandled statement kind %s", WlKindText[statement.kind]);
@@ -776,24 +834,6 @@ WlScope *WlCreateAndPushNamespace(WlBinder *b, Str name)
 
 	listPush(&b->scopes, ns->scope);
 	return ns->scope;
-}
-
-WlScope *WlCreateAndPushScope(WlBinder *b)
-{
-	WlScope *scope = arenaMalloc(sizeof(WlScope), &b->arena);
-	*scope = (WlScope){
-		.usedScopes = listNew(),
-		.symbols = listNew(),
-		.parentScope = listPeek(&b->scopes),
-	};
-	listPush(&b->scopes, scope);
-	return scope;
-};
-
-void WlPopScope(WlBinder *b)
-{
-	listPop(&b->scopes);
-	assert(!listIsEmpty(b->scopes) && "The global scope shouldn't be popped");
 }
 
 WlbNode wlBindBlock(WlBinder *b, WlSyntaxBlock body, bool createScope)

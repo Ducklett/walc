@@ -26,7 +26,7 @@ export i64 negate(i64 b) { -b }
 export bool negateBool(bool b) { !b }
 
 export i64 something() {
-    // you can use do blocks to perform advances calculations withing an expression
+    // you can use do blocks to perform advanced calculations within an expression
     10 + do {
         let a  = 4;
         let b = 3;

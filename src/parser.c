@@ -396,6 +396,11 @@ typedef struct {
 } WlSyntaxIf;
 
 typedef struct {
+	WlToken parenOpen;
+	WlToken expr;
+	WlToken parenClose;
+} WlParenthesizedExpression;
+typedef struct {
 	WlToken doKeyword;
 	WlSyntaxBlock block;
 } WlSyntaxDo;
@@ -592,6 +597,18 @@ WlToken wlParsePrimaryExpression(WlParser *p)
 {
 	switch (wlParserPeek(p).kind) {
 
+	case WlKind_TkParenOpen: {
+		WlParenthesizedExpression pr = {0};
+		pr.parenOpen = wlParserMatch(p, WlKind_TkParenOpen);
+		pr.expr = wlParseExpression(p);
+		pr.parenOpen = wlParserMatch(p, WlKind_TkParenClose);
+
+		WlParenthesizedExpression *prp = arenaMalloc(sizeof(WlParenthesizedExpression), &p->arena);
+		*prp = pr;
+		return (WlToken){.kind = WlKind_StParenthesizedExpression,
+						 .valuePtr = prp,
+						 .span = spanFromTokens(pr.parenOpen, pr.parenClose)};
+	} break;
 	case WlKind_KwDo: {
 		WlSyntaxDo st = {0};
 		st.doKeyword = wlParserMatch(p, WlKind_KwDo);
@@ -831,6 +848,7 @@ WlToken wlParseStatement(WlParser *p)
 	case WlKind_KwIf: {
 		WlSyntaxIf st = {0};
 		st.ifKeyword = wlParserMatch(p, WlKind_KwIf);
+		st.condition = wlParseExpression(p);
 		st.thenBlock = wlParseBlock(p, BlockParseStatements);
 		WlToken last;
 		if (wlParserPeek(p).kind == WlKind_KwElse) {
@@ -861,7 +879,7 @@ WlToken wlParseStatement(WlParser *p)
 	} break;
 	case WlKind_KwWhile: {
 		WlSyntaxWhile st = {0};
-		st.whileKeyword = wlParserMatch(p, WlKind_KwIf);
+		st.whileKeyword = wlParserMatch(p, WlKind_KwWhile);
 		st.condition = wlParseExpression(p);
 		st.block = wlParseBlock(p, BlockParseStatements);
 
@@ -874,19 +892,18 @@ WlToken wlParseStatement(WlParser *p)
 	} break;
 	case WlKind_KwFor: {
 		WlSyntaxFor st = {0};
-		st.forKeyword = wlParserMatch(p, WlKind_KwIf);
-		st.preCondition = wlParseExpression(p);
-		st.semicolon = wlParserMatch(p, WlKind_TkSemicolon);
-		st.condition = wlParseExpression(p);
-		st.semicolon2 = wlParserMatch(p, WlKind_TkSemicolon);
-		st.postCondition = wlParseExpression(p);
+		st.forKeyword = wlParserMatch(p, WlKind_KwFor);
+		st.preCondition = wlParseStatement(p);
+		// st.semicolon = wlParserMatch(p, WlKind_TkSemicolon);
+		st.condition = wlParseStatement(p);
+		// st.semicolon2 = wlParserMatch(p, WlKind_TkSemicolon);
+		st.postCondition = wlParseStatement(p);
 		st.block = wlParseBlock(p, BlockParseStatements);
 
 		WlSyntaxFor *stp = arenaMalloc(sizeof(WlSyntaxFor), &p->arena);
 		*stp = st;
-		return (WlToken){.kind = WlKind_StWhile,
-						 .valuePtr = stp,
-						 .span = spanFromTokens(st.forKeyword, st.block.curlyClose)};
+		return (
+			WlToken){.kind = WlKind_StFor, .valuePtr = stp, .span = spanFromTokens(st.forKeyword, st.block.curlyClose)};
 
 	} break;
 	default: {

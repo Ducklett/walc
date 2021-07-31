@@ -6,7 +6,10 @@ void lowerNode(WlBinder *b, WlbNode *n)
 	case WlBKind_None: break;
 	case WlBKind_Unresolved: break;
 	case WlBKind_Function: break;
-	case WlBKind_DoExpression:
+	case WlBKind_DoExpression: {
+		n->kind = WlBKind_Block;
+		lowerNode(b, n);
+	} break;
 	case WlBKind_Block: {
 		WlBoundBlock blk = *(WlBoundBlock *)n->data;
 
@@ -45,11 +48,34 @@ void lowerNode(WlBinder *b, WlbNode *n)
 		lowerNode(b, &st->block);
 	} break;
 	case WlBKind_ForLoop: {
+		// <precondition>
+		// while(<condition>) {
+		// 	<block>
+		// 	<postcondition>
+		// }
+
 		WlBoundFor *st = n->data;
-		lowerNode(b, &st->preCondition);
-		lowerNode(b, &st->condition);
-		lowerNode(b, &st->postCondition);
-		lowerNode(b, &st->block);
+
+		WlBoundBlock *blk = arenaMalloc(sizeof(WlBoundBlock), &b->arena);
+		blk->nodes = listNew();
+		blk->scope = st->scope;
+
+		listPush(&blk->nodes, st->preCondition);
+
+		WlBoundWhile *whl = arenaMalloc(sizeof(WlBoundWhile), &b->arena);
+		whl->condition = st->condition;
+		whl->block = st->block;
+
+		WlBoundBlock *innerBlk = st->block.data;
+		listPush(&innerBlk->nodes, st->postCondition);
+
+		WlbNode whileNode = {.kind = WlBKind_WhileLoop, .data = whl, .type = WlBType_u0};
+
+		listPush(&blk->nodes, whileNode);
+
+		n->kind = WlBKind_Block;
+		n->data = blk;
+		lowerNode(b, n);
 	} break;
 	case WlBKind_VariableDeclaration: {
 		WlBoundVariable *st = n->data;
@@ -86,9 +112,15 @@ void lowerNode(WlBinder *b, WlbNode *n)
 	} break;
 	case WlBKind_TernaryExpression: {
 		WlBoundTernaryExpression *st = n->data;
-		lowerNode(b, &st->condition);
-		lowerNode(b, &st->thenExpr);
-		lowerNode(b, &st->elseExpr);
+		WlBoundIf *df = arenaMalloc(sizeof(WlBoundIf), &b->arena);
+		df->condition = st->condition;
+		df->thenBlock = st->thenExpr;
+		df->elseBlock = st->elseExpr;
+
+		n->kind = WlBKind_If;
+		n->data = df;
+
+		lowerNode(b, n);
 	} break;
 	case WlBKind_PreUnaryExpression: {
 		WlBoundPreUnaryExpression *st = n->data;

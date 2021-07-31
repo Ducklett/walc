@@ -637,12 +637,12 @@ void wasmPushOpMemoryGrow(DynamicBuf *body) { dynamicBufPush(body, 0x40); }
 void wasmPushOpi32Const(DynamicBuf *body, i32 value)
 {
 	dynamicBufPush(body, 0x41);
-	leb128EncodeU(value, body);
+	leb128EncodeS(value, body);
 }
 void wasmPushOpi64Const(DynamicBuf *body, i64 value)
 {
 	dynamicBufPush(body, 0x42);
-	leb128EncodeU(value, body);
+	leb128EncodeS(value, body);
 }
 void wasmPushOpf32Const(DynamicBuf *body, f32 value)
 {

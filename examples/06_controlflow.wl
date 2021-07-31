@@ -1,6 +1,6 @@
 import print(str msg);
 
-export main(i32 num) {
+export main(i64 num) {
     if num > 10 {
         print("The number is big");
     } else {
@@ -9,14 +9,14 @@ export main(i32 num) {
 
     print("We will now print n times.");
 
-    for(var i = 0; i< num; i++) {
+    for var i = 0; i < num; i++; {
         print("for loop!");
     }
 
     print("the same could be done with while loop");
     var i = 0;
-    while(i<num) {
-        print("while loop!")
+    while i < num {
+        print("while loop!");
         i++;
     }
 
@@ -24,8 +24,7 @@ export main(i32 num) {
 
     var j = 0;
     do {
-        print("do-while loop!")
+        print("do-while loop!");
         j++;
     } while j < num;
-
 }

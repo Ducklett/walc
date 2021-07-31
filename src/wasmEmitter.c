@@ -231,27 +231,65 @@ void emitStatement(WlbNode statement, DynamicBuf *opcodes)
 		WlBoundBinaryExpression bin = *(WlBoundBinaryExpression *)statement.data;
 		emitStatement(bin.left, opcodes);
 		emitStatement(bin.right, opcodes);
-		emitOperator(statement.type, bin.operator, opcodes);
+		emitOperator(bin.left.type, bin.operator, opcodes);
 	} break;
-	case WlBKind_DoExpression: {
+	case WlBKind_Block: {
 		WlBoundBlock blk = *(WlBoundBlock *)statement.data;
 		emitBlock(blk, opcodes);
 	} break;
-	case WlBKind_TernaryExpression: {
-		WlBoundTernaryExpression tr = *(WlBoundTernaryExpression *)statement.data;
-		if (tr.thenExpr.kind == WlBKind_NumberLiteral && tr.elseExpr.kind == WlBKind_NumberLiteral) {
-			emitStatement(tr.thenExpr, opcodes);
-			emitStatement(tr.elseExpr, opcodes);
+	case WlBKind_If: {
+		WlBoundIf tr = *(WlBoundIf *)statement.data;
+		if (tr.thenBlock.kind == WlBKind_NumberLiteral && tr.thenBlock.kind == WlBKind_NumberLiteral) {
+			emitStatement(tr.thenBlock, opcodes);
+			emitStatement(tr.thenBlock, opcodes);
 			emitStatement(tr.condition, opcodes);
 			wasmPushOpSelect(opcodes);
 		} else {
 			emitStatement(tr.condition, opcodes);
 			wasmPushOpIf(opcodes, boundTypeToWasm(statement.type));
-			emitStatement(tr.thenExpr, opcodes);
-			wasmPushOpElse(opcodes);
-			emitStatement(tr.elseExpr, opcodes);
+			emitStatement(tr.thenBlock, opcodes);
+			if (tr.elseBlock.kind != WlBKind_None) {
+				wasmPushOpElse(opcodes);
+				emitStatement(tr.elseBlock, opcodes);
+			}
 			wasmPushOpEnd(opcodes);
 		}
+	} break;
+	case WlBKind_WhileLoop: {
+		WlBoundWhile whl = *(WlBoundWhile *)statement.data;
+		wasmPushOpBlock(opcodes, WasmType_Void);
+		wasmPushOpLoop(opcodes, WasmType_Void);
+
+		// (br_if 1 (eqz (condition)))
+		emitStatement(whl.condition, opcodes);
+		wasmPushOpi32Eqz(opcodes);
+		wasmPushOpBrIf(opcodes, 1);
+
+		emitStatement(whl.block, opcodes);
+
+		wasmPushOpBr(opcodes, 0);
+
+		wasmPushOpEnd(opcodes); // end loop
+		wasmPushOpEnd(opcodes); // end block
+
+	} break;
+	case WlBKind_DoWhileLoop: {
+		WlBoundDoWhile whl = *(WlBoundDoWhile *)statement.data;
+		wasmPushOpBlock(opcodes, WasmType_Void);
+		wasmPushOpLoop(opcodes, WasmType_Void);
+
+		emitStatement(whl.block, opcodes);
+
+		// (br_if 1 (eqz (condition)))
+		emitStatement(whl.condition, opcodes);
+		wasmPushOpi32Eqz(opcodes);
+		wasmPushOpBrIf(opcodes, 1);
+
+		wasmPushOpBr(opcodes, 0);
+
+		wasmPushOpEnd(opcodes); // end loop
+		wasmPushOpEnd(opcodes); // end block
+
 	} break;
 	case WlBKind_NumberLiteral: {
 		switch (statement.type) {
@@ -390,9 +428,7 @@ Buf emitWasm(WlBinder *b)
 
 			DynamicBuf opcodes = dynamicBufCreate();
 
-			WlbNode bodyNode = fn->body;
-			WlBoundBlock body = *(WlBoundBlock *)bodyNode.data;
-			emitBlock(body, &opcodes);
+			emitStatement(fn->body, &opcodes);
 
 			wasmModuleAddFunction(&source, (fn->symbol->flags & WlSFlag_Export) ? fn->symbol->name : STREMPTY,
 								  dynamicBufToBuf(args), dynamicBufToBuf(rets), dynamicBufToBuf(locals),
