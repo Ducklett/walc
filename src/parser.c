@@ -154,6 +154,7 @@ lexStart:
 	case ',': return wlLexerBasic(l, 1, WlKind_TkComma);
 	case '.': return wlLexerBasic(l, 1, WlKind_TkDot);
 	case ';': return wlLexerBasic(l, 1, WlKind_TkSemicolon);
+	case '@': return wlLexerBasic(l, 1, WlKind_TkAt);
 	case '"': {
 		l->index++;
 		int start = l->index;
@@ -355,6 +356,14 @@ typedef struct {
 } WlSyntaxCall;
 
 typedef struct {
+	WlToken at;
+	List(WlToken) path;
+	WlToken parenOpen;
+	List(WlToken) args;
+	WlToken parenClose;
+} WlSyntaxNote;
+
+typedef struct {
 	WlToken curlyOpen;
 	List(WlToken) statements;
 	WlToken curlyClose;
@@ -366,6 +375,7 @@ typedef struct {
 } WlSyntaxParameter;
 
 typedef struct {
+	List(WlToken) notes;
 	WlToken export;
 	WlToken type;
 	WlToken name;
@@ -376,12 +386,14 @@ typedef struct {
 } WlSyntaxFunction;
 
 typedef struct {
+	List(WlToken) notes;
 	WlToken namespace;
 	List(WlToken) path;
 	WlSyntaxBlock body;
 } WlSyntaxNamespace;
 
 typedef struct {
+	List(WlToken) notes;
 	WlToken use;
 	List(WlToken) path;
 	WlToken semicolon;
@@ -430,6 +442,7 @@ typedef struct {
 } WlSyntaxFor;
 
 typedef struct {
+	List(WlToken) notes;
 	WlToken import;
 	WlToken type;
 	WlToken name;
@@ -459,6 +472,7 @@ typedef struct {
 	int tokenIndex;
 	int lookaheadCount;
 	bool sectionStart;
+	List(WlToken) notes;
 } WlParser;
 
 WlParser wlParserCreate(Str filename, Str source)
@@ -468,6 +482,7 @@ WlParser wlParserCreate(Str filename, Str source)
 		.lexer = l,
 		.topLevelDeclarations = listNew(),
 		.diagnostics = listNew(),
+		.notes = listNew(),
 		.arena = arenaCreate(),
 		.tokens = {0},
 		.lookaheadCount = 0,
@@ -591,6 +606,38 @@ List(WlToken) wlParseReferencePath(WlParser *p)
 		listPush(&path, delim);
 	}
 	return path;
+}
+
+WlToken parseNote(WlParser *p)
+{
+	WlSyntaxNote *note = arenaMalloc(sizeof(WlSyntaxNote), &p->arena);
+	WlToken last;
+	note->at = wlParserMatch(p, WlKind_TkAt);
+	note->path = wlParseReferencePath(p);
+	if (wlParserPeek(p).kind == WlKind_TkParenOpen) {
+		note->parenOpen = wlParserMatch(p, WlKind_TkParenOpen);
+		note->args = wlParseArgumentList(p);
+		note->parenClose = wlParserMatch(p, WlKind_TkParenClose);
+		last = note->parenClose;
+	} else {
+		last = note->path[listLen(note->path) - 1];
+	}
+
+	return (WlToken){
+		.kind = WlKind_StNote,
+		.valuePtr = note,
+		.span = spanFromTokens(note->at, last),
+	};
+}
+
+List(WlToken) parseNotes(WlParser *p)
+{
+	List(WlToken) notes = listNew();
+	while (wlParserPeek(p).kind == WlKind_TkAt) {
+		WlToken note = parseNote(p);
+		listPush(&notes, note);
+	}
+	return notes;
 }
 
 WlToken wlParsePrimaryExpression(WlParser *p)
@@ -961,6 +1008,7 @@ WlToken wlParseImport(WlParser *p)
 {
 	WlSyntaxImport im = {0};
 
+	im.notes = p->notes;
 	im.import = wlParserMatch(p, WlKind_KwImport);
 	im.type = wlParserMatch(p, WlKind_Symbol);
 
@@ -990,6 +1038,7 @@ WlToken wlParseFunction(WlParser *p)
 
 	WlSyntaxFunction fn = {0};
 
+	fn.notes = p->notes;
 	WlToken first = {.kind = WlKind_Missing};
 
 	if (wlParserPeek(p).kind == WlKind_KwExport) {
@@ -1029,6 +1078,7 @@ WlToken wlParseNamespace(WlParser *p)
 {
 	WlSyntaxNamespace ns = {0};
 
+	ns.notes = p->notes;
 	ns.namespace = wlParserMatch(p, WlKind_KwNamespace);
 
 	ns.path = wlParseReferencePath(p);
@@ -1046,7 +1096,7 @@ WlToken wlParseNamespace(WlParser *p)
 WlToken wlParseUse(WlParser *p)
 {
 	WlSyntaxUse us = {0};
-
+	us.notes = p->notes;
 	us.use = wlParserMatch(p, WlKind_KwUse);
 
 	us.path = wlParseReferencePath(p);
@@ -1072,14 +1122,17 @@ WlToken wlParseUse(WlParser *p)
 
 WlToken wlParseDeclaration(WlParser *p, bool topLevel)
 {
+	p->notes = parseNotes(p);
 	WlToken tk;
 	switch (wlParserPeek(p).kind) {
 	case WlKind_KwUse: tk = wlParseUse(p); break;
 	case WlKind_KwImport: tk = wlParseImport(p); break;
 	case WlKind_KwNamespace: tk = wlParseNamespace(p); break;
+	case WlKind_EOF: PANIC("Unexpected EOF,expected declaration"); break;
 	default: tk = wlParseFunction(p); break;
 	}
 	if (topLevel) wlParserAddTopLevelStatement(p, tk);
+	p->notes = NULL;
 	return tk;
 }
 

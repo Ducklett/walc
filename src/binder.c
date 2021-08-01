@@ -452,6 +452,8 @@ bool isSubType(WlBType child, WlBType parent)
 	}
 }
 
+// NOTE: this isn't actually used as of right now since variables are never added to the "typelinked" list
+//
 void propagateVariableType(WlSymbol *s, WlBType type)
 {
 	assert(s != NULL);

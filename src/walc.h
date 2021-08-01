@@ -52,6 +52,7 @@ typedef enum WlKind
 	WlKind_TkComma,
 	WlKind_TkDot,
 	WlKind_TkSemicolon,
+	WlKind_TkAt,
 
 	WlKind_Keywords_Start,
 	WlKind_KwTrue,
@@ -82,6 +83,7 @@ typedef enum WlKind
 	WlKind_Keywords_End,
 
 	WlKind_Syntax_Start,
+	WlKind_StNote,
 	WlKind_StFunction,
 	WlKind_StNamespace,
 	WlKind_StUse,
@@ -151,6 +153,7 @@ char *WlKindText[] = {
 	",",
 	".",
 	";",
+	"@",
 	"<keywords start>",
 	"true",
 	"false",
@@ -180,6 +183,7 @@ char *WlKindText[] = {
 	"<keywords end>",
 
 	"<syntax start>",
+	"WlKind_StNote",
 	"WlKind_StFunction",
 	"WlKind_StNamespace",
 	"WlKind_StUse",
