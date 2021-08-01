@@ -267,10 +267,10 @@ WlSymbol *wlPushSymbol(WlBinder *b, Str name, WlBType type, WlSymbolFlags flags)
 	return newSymbol;
 }
 
-WlSymbol *wlPushVariable(WlBinder *b, WlSpan span, Str name, WlBType type, bool constant)
+WlSymbol *wlPushVariable(WlBinder *b, WlSpan span, Str name, WlBType type, bool immutable)
 {
 	WlSymbolFlags flags = WlSFlag_Variable;
-	if (constant) flags |= WlSFlag_Constant | WlSFlag_Immutable;
+	if (immutable) flags |= WlSFlag_Immutable;
 	WlSymbol *s = wlPushSymbol(b, name, type, flags);
 
 	if (!s) {
@@ -479,6 +479,7 @@ void propagateVariableType(WlSymbol *s, WlBType type)
 // changes the type of an expression after a more concrete type is found
 void propagateType(WlbNode *expr, WlBType type)
 {
+	if (expr->type == type) return;
 	assert(!wlIsConcreteType(expr->type));
 	assert(expr->type != type);
 
@@ -546,7 +547,7 @@ void softCast(WlBinder *b, WlbNode *n, WlBType expected)
 						  .num1 = n->type,
 						  .num2 = expected};
 		listPush(&b->diagnostics, d);
-		n->type = expected;
+		n->type = WlBType_error;
 	}
 }
 
@@ -623,6 +624,11 @@ WlbNode wlBindExpression(WlBinder *b, WlToken expression)
 			.span = expression.span,
 		};
 	} break;
+	case WlKind_StParenthesizedExpression: {
+		WlParenthesizedExpression pr = *(WlParenthesizedExpression *)expression.valuePtr;
+		WlbNode expr = wlBindExpression(b, pr.expr);
+		return expr;
+	}
 	case WlKind_StBinaryExpression: {
 		WlBinaryExpression ex = *(WlBinaryExpression *)expression.valuePtr;
 		WlBoundBinaryExpression bex;
@@ -820,26 +826,28 @@ WlbNode wlBindStatement(WlBinder *b, WlToken statement)
 						   ? WlBType_inferWeak
 						   : wlBindType(var.type);
 
-		bool isConstant = false;
+		bool isImmutable = var.type.kind == WlKind_KwLet;
 		Str name = var.name.valueStr;
 		WlSpan span = var.name.span;
 
+		bvar->symbol = wlPushVariable(b, span, name, type, isImmutable);
+
 		if (var.initializer.kind == WlKind_Missing) {
 			bvar->initializer = (WlbNode){.kind = WlBKind_None};
+			if (isImmutable) PANIC("immutable must have initializer");
 		} else {
+			b->currentVariable = bvar->symbol;
 			bvar->initializer = wlBindExpressionOfType(b, var.initializer, type);
-			if (var.type.kind == WlKind_KwLet && isLiteral(bvar->initializer.kind)) {
-				isConstant = true;
+			b->currentVariable = NULL;
+
+			type = bvar->initializer.type;
+			bvar->symbol->type = bvar->initializer.type;
+
+			if (isImmutable && isLiteral(bvar->initializer.kind)) {
+				bvar->symbol->flags |= WlSFlag_Constant;
+				bvar->symbol->initializer = &bvar->initializer;
 			}
 		}
-
-		if (type == WlBType_inferStrong) {
-			type = bvar->initializer.type;
-		}
-
-		bvar->symbol = wlPushVariable(b, span, name, type, isConstant);
-		if (var.type.kind == WlKind_KwLet) bvar->symbol->flags |= WlSFlag_Immutable;
-		if (isConstant) bvar->symbol->initializer = &bvar->initializer;
 
 		return (WlbNode){.kind = WlBKind_VariableDeclaration, .data = bvar, .type = type, .span = statement.span};
 	} break;
@@ -936,8 +944,10 @@ WlbNode wlBindBlock(WlBinder *b, WlSyntaxBlock body, bool createScope)
 
 	blk->nodes = listNew();
 
-	for (int i = 0; i < listLen(body.statements); i++) {
+	int len = listLen(body.statements);
+	for (int i = 0; i < len; i++) {
 		WlbNode st = wlBindStatement(b, body.statements[i]);
+		bool isLast = i == len - 1;
 		listPush(&blk->nodes, st);
 	}
 

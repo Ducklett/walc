@@ -17,16 +17,17 @@ void diagnosticPrint(WlDiagnostic d)
 {
 	Str errSlice = strSlice(d.span.source, d.span.start, d.span.len);
 
-	int lineStart = d.span.start;
-	int lineEnd = d.span.start + d.span.len;
-	while (lineStart > 0 && !isNewline(d.span.source.buf[--lineStart])) {
-	}
-	while (lineEnd < d.span.source.len && !isNewline(d.span.source.buf[++lineEnd])) {
-	}
+	// TODO: fix span ranges, line printing etc.
+	// int lineStart = d.span.start;
+	// int lineEnd = d.span.start + d.span.len;
+	// while (lineStart > 0 && !isNewline(d.span.source.buf[--lineStart])) {
+	// }
+	// while (lineEnd < d.span.source.len && !isNewline(d.span.source.buf[++lineEnd])) {
+	// }
 
-	printf("%d %d\n", lineStart, lineEnd);
+	// printf("%d %d\n", lineStart, lineEnd);
 
-	Str lineSlice = strSlice(d.span.source, lineStart, lineEnd - lineStart);
+	// Str lineSlice = strSlice(d.span.source, lineStart, lineEnd - lineStart);
 
 	printf("%s%.*s:%d:%d:%s %sfatal error:%s ", TERMBOLD, STRPRINT(d.span.filename), d.span.start, d.span.len,
 		   TERMCLEAR, TERMRED, TERMCLEAR);
@@ -67,12 +68,12 @@ void diagnosticPrint(WlDiagnostic d)
 	default: PANIC("unhandled diagnostic kind %d\n", d.kind);
 	}
 
-	printf("%.*s\n", STRPRINT(lineSlice));
-	printf("%*s%s", d.span.start - lineStart, "", TERMRED);
-	for (int i = 0; i < d.span.len; i++) {
-		fputchar(i == 0 ? '^' : '~');
-	}
-	printf("%s\n", TERMCLEAR);
+	// printf("%.*s\n", STRPRINT(lineSlice));
+	// printf("%*s%s", d.span.start - lineStart, "", TERMRED);
+	// for (int i = 0; i < d.span.len; i++) {
+	// 	fputchar(i == 0 ? '^' : '~');
+	// }
+	// printf("%s\n", TERMCLEAR);
 }
 
 void diagnosticPrintAll(List(WlDiagnostic) d)

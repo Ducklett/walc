@@ -23,13 +23,15 @@ int main(int argc, char **argv)
 	// 		   STRPRINT(fn->symbol->name));
 	// }
 
-	bool hasDiagnostics = listLen(p.diagnostics) || listLen(p.lexer.diagnostics);
+	bool hasDiagnostics = listLen(p.diagnostics) || listLen(p.lexer.diagnostics) || listLen(b.diagnostics);
 
 	if (hasDiagnostics) {
 		for (int i = 0; i < listLen(p.lexer.diagnostics); i++)
 			diagnosticPrint(p.lexer.diagnostics[i]);
 		for (int i = 0; i < listLen(p.diagnostics); i++)
 			diagnosticPrint(p.diagnostics[i]);
+		for (int i = 0; i < listLen(b.diagnostics); i++)
+			diagnosticPrint(b.diagnostics[i]);
 	} else {
 		lower(&b);
 		Buf wasm = emitWasm(&b);

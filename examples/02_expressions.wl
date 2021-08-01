@@ -30,8 +30,9 @@ export i32 something() {
     // the return type is i32 and the rest of the types are inferred from there on out
     10 + do {
         let a  = 4;
-        let b = 3;
-        a * b
+        let b = a*0+3;
+        let c = (a + b) * 0;
+        a * b+c
     }
 }
 

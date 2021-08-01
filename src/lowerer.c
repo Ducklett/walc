@@ -115,7 +115,9 @@ void lowerNode(WlBinder *b, WlbNode *n)
 	case WlBKind_Ref: {
 		WlSymbol *s = n->data;
 		if (s->flags & WlSFlag_Constant) {
-			propagateType(s->initializer, n->type);
+			if (s->initializer->type != n->type) {
+				propagateType(s->initializer, n->type);
+			}
 			*n = *s->initializer;
 		}
 	} break;
@@ -152,7 +154,9 @@ void lowerNode(WlBinder *b, WlbNode *n)
 			bin->left = st->expression;
 			bin->operator= st->operator== WlBOperator_Increment ? WlBOperator_Add : WlBOperator_Subtract;
 			bin->right = (WlbNode){.kind = WlBKind_NumberLiteral, .type = WlBType_integerNumber, .dataNum = 1};
-			propagateType(&bin->right, bin->left.type);
+			if (bin->right.type != bin->left.type) {
+				propagateType(&bin->right, bin->left.type);
+			}
 
 			WlBoundAssignment *asg = arenaMalloc(sizeof(WlBoundAssignment), &b->arena);
 			asg->symbol = st->expression.data;
@@ -182,7 +186,9 @@ void lowerNode(WlBinder *b, WlbNode *n)
 		bin->left = st->expression;
 		bin->operator= st->operator== WlBOperator_Increment ? WlBOperator_Add : WlBOperator_Subtract;
 		bin->right = (WlbNode){.kind = WlBKind_NumberLiteral, .type = WlBType_integerNumber, .dataNum = 1};
-		propagateType(&bin->right, bin->left.type);
+		if (bin->right.type != bin->left.type) {
+			propagateType(&bin->right, bin->left.type);
+		}
 
 		WlBoundAssignment *asg = arenaMalloc(sizeof(WlBoundAssignment), &b->arena);
 		asg->symbol = st->expression.data;

@@ -234,6 +234,7 @@ typedef enum
 	WlBType_str,
 	WlBType_end,
 	WlBType_unknown,
+	WlBType_error,
 	WlBType_integerNumber,
 	WlBType_floatingNumber,
 	// infer type but always return a real type
@@ -243,7 +244,27 @@ typedef enum
 } WlBType;
 
 char *WlBTypeText[] = {
-	"u0", "bool", "u8", "i8", "u16", "i16", "u32", "i32", "u64", "i64", "f32", "f64", "str", "<>", "<>", "<infer>",
+	"u0",
+	//
+	"bool",
+	"u8",
+	"i8",
+	"u16",
+	"i16",
+	"u32",
+	"i32",
+	"u64",
+	"i64",
+	"f32",
+	"f64",
+	"str",
+	"<end>",
+	"<unknown>",
+	"<error>",
+	"integer",
+	"floating",
+	"infer strong",
+	"infer weak",
 };
 
 #define SPANEMPTY ((WlSpan){0})
